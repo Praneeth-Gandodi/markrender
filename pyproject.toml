@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "markrender"
+version = "1.0.0"
+description = "Professional terminal markdown renderer for streaming LLM responses"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+keywords = ["markdown", "terminal", "rendering", "streaming", "llm", "cli"]
+authors = [
+    {name = "Praneeth Gandodi"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "pygments>=2.7.0",
+    "emoji>=1.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.10.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Praneeth-Gandodi/markrender"
+Documentation = "https://github.com/Praneeth-Gandodi/markrender#readme"
+Repository = "https://github.com/Praneeth-Gandodi/markrender"
+"Bug Tracker" = "https://github.com/Praneeth-Gandodi/markrender/issues"
