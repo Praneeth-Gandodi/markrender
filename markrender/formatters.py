@@ -28,7 +28,7 @@ from .colors import colorize, Colors, get_terminal_width
 class MarkdownFormatter:
     """Formats markdown elements for terminal output"""
     
-    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None):
+    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None, force_color=False):
         """
         Initialize formatter
         
@@ -37,11 +37,13 @@ class MarkdownFormatter:
             inline_code_color: Custom color for inline code (default from theme)
             code_background: Whether to show background in code blocks
             width: Terminal width (auto-detect if None)
+            force_color: Force color output (bypasses terminal capability check)
         """
         self.theme = theme_config
         self.inline_code_color = inline_code_color or theme_config['inline_code']
         self.code_background = code_background
         self.width = width or get_terminal_width()
+        self.force_color = force_color
     
     def format_heading(self, level, text):
         """
@@ -59,13 +61,13 @@ class MarkdownFormatter:
         
         # Different symbols for different heading levels
         if level == 1:
-            text = colorize(f'{text}', color + Colors.BOLD)
+            text = colorize(f'{text}', color + Colors.BOLD, force_color=self.force_color)
             return f'\n{text}\n'
         elif level == 2:
-            text = colorize(f'{text}', color + Colors.BOLD)
+            text = colorize(f'{text}', color + Colors.BOLD, force_color=self.force_color)
             return f'\n{text}\n'
         else:
-            text = colorize(f'{text}', color)
+            text = colorize(f'{text}', color, force_color=self.force_color)
             return f'\n{text}\n'
     
     def format_code_block(self, code, language='', line_numbers=True):
@@ -101,7 +103,7 @@ class MarkdownFormatter:
             
             formatted_lines = []
             for i, line in enumerate(lines, 1):
-                line_num = colorize(f'{i:>{num_width}}', Colors.BRIGHT_BLACK)
+                line_num = colorize(f'{i:>{num_width}}', Colors.BRIGHT_BLACK, force_color=self.force_color)
                 # Add background if requested
                 if self.code_background:
                     formatted_lines.append(f'{Colors.BG_BRIGHT_BLACK} {line_num} {Colors.RESET} {line}')
@@ -125,33 +127,34 @@ class MarkdownFormatter:
         Returns:
             Formatted inline code string
         """
-        return colorize(f'{text}', self.inline_code_color)
+        return colorize(f'{text}', self.inline_code_color, force_color=self.force_color)
     
-    def format_table(self, rows):
+    def format_table(self, header, data_rows):
         """
         Format markdown table with borders using rich
         
         Args:
-            rows: List of lists representing table rows
+            header: List of strings for table header
+            data_rows: List of lists of strings representing table data rows
         
         Returns:
             Formatted table string
         """
-        if not rich_available or not rows:
+        if not rich_available or not header:
             return ''
 
-        header = rows[0]
-        # The separator is the second row, which we can ignore
-        data_rows = rows[2:]
+        # Initialize rich Table
+        table = Table(show_header=True, header_style="bold magenta", expand=True)
 
-        table = Table(show_header=True, header_style="bold magenta")
+        # Add columns
+        for col_title in header: # Allow headers to wrap
+            table.add_column(col_title)
 
-        for col in header:
-            table.add_column(col)
+        # Add data rows
+        for row_data in data_rows:
+            table.add_row(*[str(cell) for cell in row_data])
 
-        for row in data_rows:
-            table.add_row(*[str(cell) for cell in row])
-
+        # Render table to string
         console = Console(file=StringIO(), width=self.width, force_terminal=True)
         console.print(table)
         output = console.file.getvalue()
@@ -175,9 +178,9 @@ class MarkdownFormatter:
         """
         indent = '  ' * indent_level
         if ordered:
-            marker = colorize(f'{number}.', Colors.BRIGHT_BLUE)
+            marker = colorize(f'{number}.', Colors.BRIGHT_BLUE, force_color=self.force_color)
         else:
-            marker = colorize('•', Colors.BRIGHT_BLUE)
+            marker = colorize('•', Colors.BRIGHT_BLUE, force_color=self.force_color)
         
         return f'{indent}{marker} {text}'
     
@@ -193,9 +196,9 @@ class MarkdownFormatter:
             Formatted checkbox string
         """
         if checked:
-            box = colorize('✅', self.theme['checkbox_checked'])
+            box = colorize('✅', self.theme['checkbox_checked'], force_color=self.force_color)
         else:
-            box = colorize('⬜', self.theme['checkbox_unchecked'])
+            box = colorize('⬜', self.theme['checkbox_unchecked'], force_color=self.force_color)
         
         return f'{box}  {text}'
     
@@ -210,23 +213,49 @@ class MarkdownFormatter:
         Returns:
             Formatted blockquote string
         """
-        stripped_text = text.strip()
-        if stripped_text.startswith('**Note:**'):
-            note_color = self.theme.get('note_color', Colors.YELLOW)
-            # We want to format the "**Note:**" part bold, and the rest normal
-            parts = stripped_text.split('**Note:**', 1)
-            if len(parts) > 1:
-                note_text = colorize('Note:', Colors.BOLD)
-                rest_of_text = parts[1]
-                return colorize(f'{note_text}{rest_of_text}', note_color)
-            else:
-                return colorize(stripped_text, note_color)
-        else:
-            border_char = colorize('│', self.theme['blockquote_border'])
+        stripped_text_first_line = text.strip().split('\n')[0] # Only check first line for callout
+        callout_types = {
+            "NOTE": self.theme.get('note_color', Colors.CYAN),
+            "TIP": self.theme.get('tip_color', Colors.GREEN),
+            "IMPORTANT": self.theme.get('important_color', Colors.MAGENTA),
+            "WARNING": self.theme.get('warning_color', Colors.YELLOW),
+            "CAUTION": self.theme.get('caution_color', Colors.RED),
+            "ATTENTION": self.theme.get('attention_color', Colors.RED), # Adding common callout
+        }
+        
+        # Regex to detect `[!TYPE]` at the beginning of the text
+        callout_match = re.match(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION)\]\s*(.*)', stripped_text_first_line, re.IGNORECASE)
+
+        if callout_match:
+            callout_type = callout_match.group(1).upper()
+            message_first_line = callout_match.group(2).strip()
+            
+            # Reconstruct the full message, removing the matched callout syntax from the first line
+            full_message = message_first_line
+            if '\n' in text:
+                # Append remaining lines of the blockquote to the message
+                full_message += '\n' + '\n'.join(text.strip().split('\n')[1:])
+            
+            type_color = callout_types.get(callout_type, Colors.WHITE)
+            
+            formatted_type = colorize(f'{callout_type}:', Colors.BOLD + type_color, force_color=self.force_color)
+            
+            # Format each line of the message separately to apply color
+            formatted_message_lines = [colorize(line, type_color, force_color=self.force_color) for line in full_message.split('\n')]
+            
+            # Reassemble without the blockquote border, just indentation
             indentation = '  ' * nesting_level
-            lines = text.split('\n')
-            formatted = [f'{indentation}{border_char} {line}' for line in lines]
-            return '\n'.join(formatted)
+            # The first line has the type and the message. Subsequent lines are just message.
+            lines = [f'{indentation} {formatted_type} {formatted_message_lines[0]}'] + \
+                    [f'{indentation}   {line}' for line in formatted_message_lines[1:]] # Indent subsequent lines
+            return '\n'.join(lines)
+
+        # Fallback to generic blockquote formatting
+        border_char = colorize('│', self.theme['blockquote_border'], force_color=self.force_color)
+        indentation = '  ' * nesting_level
+        lines = text.split('\n')
+        formatted = [f'{indentation}{border_char} {line}' for line in lines]
+        return '\n'.join(formatted)
     
     def format_link(self, text, url):
         """
@@ -246,7 +275,7 @@ class MarkdownFormatter:
         osc_end = '\x1b]8;;\x1b\\'
         
         # Colorize and underline the link text
-        colored_text = colorize(text, link_color + Colors.UNDERLINE)
+        colored_text = colorize(text, link_color + Colors.UNDERLINE, force_color=self.force_color)
         
         return f'{osc_start}{colored_text}{osc_end}'
     
@@ -259,7 +288,7 @@ class MarkdownFormatter:
         """
         width = min(self.width, 80)
         line = '─' * width
-        return '\n' + colorize(line, self.theme['hr']) + '\n'
+        return '\n' + colorize(line, self.theme['hr'], force_color=self.force_color) + '\n'
     
     def format_emoji(self, emoji_code):
         """
@@ -273,6 +302,7 @@ class MarkdownFormatter:
         """
         if emoji_lib:
             try:
+                # Emojize does not take force_color parameter, it returns raw emoji
                 return emoji_lib.emojize(f':{emoji_code}:', language='alias')
             except Exception:
                 pass
@@ -280,12 +310,12 @@ class MarkdownFormatter:
     
     def format_bold(self, text):
         """Format bold text"""
-        return colorize(text, Colors.BOLD)
+        return colorize(text, Colors.BOLD, force_color=self.force_color)
     
     def format_italic(self, text):
         """Format italic text"""
-        return colorize(text, Colors.ITALIC)
+        return colorize(text, Colors.ITALIC, force_color=self.force_color)
     
     def format_strikethrough(self, text):
         """Format strikethrough text"""
-        return colorize(text, Colors.DIM)
+        return colorize(text, Colors.DIM, force_color=self.force_color)

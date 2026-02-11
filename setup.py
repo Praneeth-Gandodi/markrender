@@ -30,6 +30,7 @@ setup(
     install_requires=[
         'pygments>=2.7.0',
         'emoji>=1.6.0',
+        'rich>=13.0.0',
     ],
     extras_require={
         'dev': [

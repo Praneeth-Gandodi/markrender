@@ -94,20 +94,21 @@ def hex_to_rgb(hex_color):
     return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
 
-def colorize(text, color_code):
+def colorize(text, color_code, force_color=False):
     """
     Apply color to text
     
     Args:
         text: Text to colorize
         color_code: ANSI color code
+        force_color: If True, force color output regardless of terminal capabilities.
     
     Returns:
         Colorized text with reset at the end
     """
-    if not supports_color():
-        return text
-    return f'{color_code}{text}{Colors.RESET}'
+    if force_color or supports_color():
+        return f'{color_code}{text}{Colors.RESET}'
+    return text
 
 
 def supports_color():

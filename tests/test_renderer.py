@@ -1,6 +1,10 @@
 """
 Tests for MarkdownRenderer class
 """
+import re
+
+def strip_ansi(text):
+    return re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', text)
 
 import pytest
 from io import StringIO
@@ -245,14 +249,15 @@ class TestMarkdownRenderer:
         output = StringIO()
         renderer = MarkdownRenderer(output=output)
         
-        renderer.render("> **Note:** This is a note.\n")
+        renderer.render("> [!NOTE] This is a note.\n")
         renderer.finalize()
         
-        result = output.getvalue()
-        assert "Note:" in result
-        assert "This is a note." in result
+        result_with_ansi = output.getvalue()
+        result = strip_ansi(result_with_ansi)
+        assert "NOTE: This is a note." in result # Changed expected string to match new format
+
         # Check that it doesn't have the blockquote border
-        assert "│" not in result
+        assert "│" not in result_with_ansi # Check original result as it has ANSI codes
 
     def test_render_regular_blockquote(self):
         """Test rendering a regular blockquote"""

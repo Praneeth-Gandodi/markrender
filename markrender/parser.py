@@ -13,7 +13,7 @@ class MarkdownParser:
     HEADING_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
     CODE_BLOCK_START = re.compile(r'^\s*```(\w*)\s*$', re.MULTILINE)
     INLINE_CODE_PATTERN = re.compile(r'`([^`]+)`')
-    BOLD_PATTERN = re.compile(r'\*\*([^\*]+)\*\*')
+    BOLD_PATTERN = re.compile(r'\*\*(.+?)\*\*')
     ITALIC_PATTERN = re.compile(r'\*([^\*]+)\*')
     STRIKETHROUGH_PATTERN = re.compile(r'~~([^~]+)~~')
     LINK_PATTERN = re.compile(r'\[([^\]]+)\]\(([^\)]+)\)')
@@ -23,7 +23,7 @@ class MarkdownParser:
     ORDERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)\.\s+(.+)$', re.MULTILINE)
     BLOCKQUOTE_PATTERN = re.compile(r'^(>\s*)+(.+)$', re.MULTILINE)
     HR_PATTERN = re.compile(r'^(\*\*\*+|---+|___+)\s*$', re.MULTILINE)
-    TABLE_ROW_PATTERN = re.compile(r'^\|(.+)\|$', re.MULTILINE)
+    TABLE_ROW_PATTERN = re.compile(r'^\|.*\|$', re.MULTILINE)
     
     def __init__(self):
         """Initialize parser state"""
@@ -104,7 +104,12 @@ class MarkdownParser:
         """
         match = self.TABLE_ROW_PATTERN.match(line)
         if match:
-            cells = [cell.strip() for cell in match.group(1).split('|')]
+            # For "| A | B |", line.split('|') gives ['', ' A ', ' B ', '']
+            # We need to strip and remove the leading/trailing empty strings
+            raw_cells = line.split('|')
+            # Remove the first and last empty strings from the split (due to leading/trailing '|')
+            cells = [cell.strip() for cell in raw_cells[1:-1]]
+            
             # Check if it's a separator row (----)
             if cells and all(re.match(r'^:?-+:?$', cell) for cell in cells):
                 # Return empty list to indicate separator (keep table open)

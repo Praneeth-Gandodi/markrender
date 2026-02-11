@@ -32,7 +32,8 @@ class MarkdownRenderer:
         inline_code_color=None,
         line_numbers=True,
         width=None,
-        output=None
+        output=None,
+        force_color=False
     ):
         """
         Initialize markdown renderer
@@ -46,12 +47,14 @@ class MarkdownRenderer:
             line_numbers: Show line numbers in code blocks (default: True)
             width: Terminal width (default: auto-detect)
             output: Output file object (default: sys.stdout)
+            force_color: Force color output even if terminal does not support it (default: False)
         """
         self.theme_config = get_theme(theme)
         self.code_background = code_background
         self.line_numbers = line_numbers
         self.width = width or get_terminal_width()
         self.output = output or sys.stdout
+        self.force_color = force_color
         
         # Initialize parser and formatter
         self.parser = MarkdownParser()
@@ -59,7 +62,8 @@ class MarkdownRenderer:
             self.theme_config,
             inline_code_color=inline_code_color,
             code_background=code_background,
-            width=self.width
+            width=self.width,
+            force_color=self.force_color
         )
         
         # Buffer for incomplete content
@@ -70,14 +74,21 @@ class MarkdownRenderer:
         self.code_language = ''
         self.code_lines = []
         self.in_table = False
-        self.table_rows = []
+        self.table_header = None        # Stores the header row
+        self.table_data_rows = []       # Stores list of data rows
         self.in_blockquote = False
         self.blockquote_lines = []
         self.paragraph_buffer = []
+        self.finalizing = False
     
     def _flush_paragraph_buffer(self):
         if self.paragraph_buffer:
             paragraph = ' '.join(self.paragraph_buffer)
+            # If there's incomplete inline formatting and we are not in the finalizing stage,
+            # do not flush the paragraph yet.
+            if not self.finalizing and self.parser.is_inline_incomplete(paragraph):
+                return
+            
             formatted = self.parser.apply_inline_formatting(paragraph, self.formatter)
             self._write(formatted + '\n\n')
             self.paragraph_buffer = []
@@ -99,6 +110,36 @@ class MarkdownRenderer:
         while '\n' in self.buffer:
             line, self.buffer = self.buffer.split('\n', 1)
             self._process_line(line)
+
+    def _flush_table(self):
+        """Flushes the buffered table rows and resets table state."""
+        if self.in_table and self.table_header is not None:
+            # Perform column validation before formatting (Issue 3)
+            # Pad shorter rows with empty strings to match header column count
+            num_cols = len(self.table_header)
+            validated_data_rows = []
+            for row in self.table_data_rows:
+                if len(row) < num_cols:
+                    validated_data_rows.append(row + [''] * (num_cols - len(row)))
+                elif len(row) > num_cols:
+                    validated_data_rows.append(row[:num_cols]) # Truncate if too many columns
+                else:
+                    validated_data_rows.append(row)
+
+            # Apply inline formatting to header and data cells (Issue 4)
+            formatted_header = [
+                self.parser.apply_inline_formatting(cell, self.formatter) for cell in self.table_header
+            ]
+            formatted_data_rows = [
+                [self.parser.apply_inline_formatting(cell, self.formatter) for cell in row]
+                for row in validated_data_rows
+            ]
+            formatted = self.formatter.format_table(formatted_header, formatted_data_rows)
+            self._write(formatted)
+        
+        self.in_table = False
+        self.table_header = None
+        self.table_data_rows = []
 
     def _process_line(self, line):
         """Process a single line of markdown"""
@@ -128,43 +169,47 @@ class MarkdownRenderer:
             if not self.in_code_block:
                 # Start of code block
                 self._flush_paragraph_buffer()
+                if self.in_table: # If a code block starts, flush any pending table
+                    self._flush_table()
                 self.in_code_block = True
                 self.code_language = lang
                 self.code_lines = []
             return
         
-        # Flush paragraph if table starts
+        # Table handling
         table_row = self.parser.parse_table_row(stripped)
         if table_row is not None:
             self._flush_paragraph_buffer()
             if not self.in_table:
                 self.in_table = True
-                self.table_rows = []
+                self.table_header = None
+                self.table_data_rows = []
             
-            # Sanitize row: remove empty strings from start/end
-            if table_row and not table_row[0]:
-                table_row.pop(0)
-            if table_row and not table_row[-1]:
-                table_row.pop(-1)
-
-            # Apply inline formatting to each cell
-            formatted_row = [self.parser.apply_inline_formatting(cell, self.formatter) for cell in table_row]
-                
-            self.table_rows.append(formatted_row)
+            # If it's a separator row, just acknowledge it.
+            # The parser returns [] for separator rows.
+            if table_row == []:
+                # If we haven't seen a header yet, this separator is invalid, ignore it.
+                # Or if we already have a header and this is the separator.
+                pass 
+            elif self.table_header is None:
+                # This is the first non-separator row, assume it's the header
+                self.table_header = table_row
+            else:
+                # This is a data row
+                self.table_data_rows.append(table_row)
             return
         elif self.in_table:
-            # End of table
+            # End of table: a non-table line was encountered
             self._flush_paragraph_buffer()
-            formatted = self.formatter.format_table(self.table_rows)
-            self._write(formatted)
-            self.in_table = False
-            self.table_rows = []
-            # Continue processing this line
+            self._flush_table()
+            # Continue processing this line as it might be other markdown
         
         # Blockquote handling
         blockquote_match = self.parser.BLOCKQUOTE_PATTERN.match(line)
         if blockquote_match:
             self._flush_paragraph_buffer()
+            if self.in_table: # If a blockquote starts, flush any pending table
+                self._flush_table()
             blockquote_text = blockquote_match.group(2)
             nesting_level = len(blockquote_match.group(1)) // 2
             if not self.in_blockquote:
@@ -186,6 +231,8 @@ class MarkdownRenderer:
         # Horizontal rule
         if self.parser.is_hr(stripped):
             self._flush_paragraph_buffer()
+            if self.in_table: # If a HR starts, flush any pending table
+                self._flush_table()
             self._write(self.formatter.format_hr())
             return
         
@@ -193,6 +240,8 @@ class MarkdownRenderer:
         heading = self.parser.parse_heading(stripped)
         if heading:
             self._flush_paragraph_buffer()
+            if self.in_table: # If a heading starts, flush any pending table
+                self._flush_table()
             level, text = heading
             text = self.parser.apply_inline_formatting(text, self.formatter)
             formatted = self.formatter.format_heading(level, text)
@@ -203,6 +252,8 @@ class MarkdownRenderer:
         checkbox = self.parser.parse_checkbox(stripped)
         if checkbox:
             self._flush_paragraph_buffer()
+            if self.in_table: # If a checkbox starts, flush any pending table
+                self._flush_table()
             checked, text = checkbox
             text = self.parser.apply_inline_formatting(text, self.formatter)
             formatted = self.formatter.format_checkbox(checked, text)
@@ -213,6 +264,8 @@ class MarkdownRenderer:
         ordered_item = self.parser.parse_ordered_list_item(stripped)
         if ordered_item:
             self._flush_paragraph_buffer()
+            if self.in_table: # If a list starts, flush any pending table
+                self._flush_table()
             indent, number, text = ordered_item
             text = self.parser.apply_inline_formatting(text, self.formatter)
             formatted = self.formatter.format_list_item(text, ordered=True, number=number, indent_level=indent)
@@ -223,6 +276,8 @@ class MarkdownRenderer:
         list_item = self.parser.parse_list_item(stripped)
         if list_item:
             self._flush_paragraph_buffer()
+            if self.in_table: # If a list starts, flush any pending table
+                self._flush_table()
             indent, text = list_item
             text = self.parser.apply_inline_formatting(text, self.formatter)
             formatted = self.formatter.format_list_item(text, ordered=False, indent_level=indent)
@@ -231,8 +286,13 @@ class MarkdownRenderer:
         
         # Regular text with inline formatting
         if stripped:
+            if self.in_table: # If regular text after separator, flush table.
+                self._flush_table()
             self.paragraph_buffer.append(stripped)
         else:
+            # Empty line, flush table if in table
+            if self.in_table:
+                self._flush_table()
             self._flush_paragraph_buffer()
     
     def finalize(self):
@@ -240,6 +300,7 @@ class MarkdownRenderer:
         Finalize rendering, flushing any remaining buffered content
         Call this after all chunks have been rendered
         """
+        self.finalizing = True
         # Process remaining buffer
         if self.buffer:
             self._process_line(self.buffer)
@@ -259,11 +320,8 @@ class MarkdownRenderer:
             self.in_code_block = False
             self.code_lines = []
         
-        if self.in_table and self.table_rows:
-            formatted = self.formatter.format_table(self.table_rows)
-            self._write(formatted)
-            self.in_table = False
-            self.table_rows = []
+        if self.in_table: # If a table is still open, flush it
+            self._flush_table()
         
         if self.in_blockquote and self.blockquote_lines:
             text = '\n'.join([line for line, _ in self.blockquote_lines])
@@ -275,6 +333,7 @@ class MarkdownRenderer:
         
         # Flush output
         self.output.flush()
+        self.finalizing = False
     
     def _write(self, text):
         """Write text to output"""

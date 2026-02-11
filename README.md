@@ -1,281 +1,132 @@
 # MarkRender 🎨
 
-**Professional Terminal Markdown Renderer for Streaming LLM Responses**
+**A professional terminal markdown renderer built for streaming LLM responses.**
 
-MarkRender is a production-ready Python library that beautifully renders markdown in terminals, specifically designed for streaming LLM responses. It provides syntax highlighting, multiple color themes, and supports all essential markdown features without flickering or performance issues.
+MarkRender is a Python library designed to bring beautifully rendered markdown directly to your terminal. It's especially good for displaying streaming output from large language models, ensuring a smooth, flicker-free experience with rich formatting and syntax highlighting.
 
-## ✨ Features
+## ✨ Features You'll Love
 
-- 🎯 **Streaming Support** - Designed for chunk-by-chunk LLM response rendering
-- 🎨 **7 Beautiful Themes** - github-dark, monokai, dracula, nord, one-dark, solarized-dark, solarized-light
-- 💻 **Syntax Highlighting** - Powered by Pygments with 500+ languages
-- 🔢 **Line Numbers** - Optional line numbers in code blocks
-- 📊 **Tables** - Beautiful table rendering with borders
-- ✅ **Checkboxes** - Task list support (☐/☑)
-- 😊 **Emoji Support** - Converts `:emoji_name:` to actual emojis
-- 🔗 **Links** - Styled hyperlinks with URLs
-- 📝 **Full Markdown** - Headings, lists, blockquotes, horizontal rules, and more
-- ⚡ **Fast & Smooth** - No flickering, instant rendering
-- 🐍 **Python 3.7+** - Compatible with Python 3.7 and above
-- 🎛️ **Customizable** - Custom colors, backgrounds, and formatting options
+*   **Streaming Optimized**: Renders markdown chunks as they arrive, perfect for LLM interactions.
+*   **Gorgeous Themes**: Comes with several built-in color themes to match your terminal aesthetic.
+*   **Smart Syntax Highlighting**: Powered by Pygments, it makes your code blocks pop.
+*   **Full Markdown Support**: Handles everything from headings and lists to tables, checkboxes, emojis, and links.
 
-## 🚀 Installation
+## 🚀 Get Started
+
+### Installation
+
+It's super easy to get MarkRender up and running:
 
 ```bash
 pip install git+https://github.com/Praneeth-Gandodi/markrender.git
 ```
 
-Or install from source:
+### Quick Usage
 
-```bash
-git clone https://github.com/Praneeth-Gandodi/markrender.git
-cd markrender
-pip install -e .
-```
-
-## 📖 Quick Start
-
-### Basic Usage
+Here's how to render a simple markdown string:
 
 ```python
 from markrender import MarkdownRenderer
 
-# Create renderer with default theme
 renderer = MarkdownRenderer()
-
-# Render markdown content
 markdown_text = """
-# Hello World
+# Welcome to MarkRender!
 
-This is **bold** and this is *italic*.
+This is **bold** text and this is *italic*.
+
+Here's some `inline code`.
+
+- [x] Task completed
+- [ ] Another task
 
 ```python
-def hello():
-    print("Hello from MarkRender!")
+def example_code():
+    print("Hello, MarkRender!")
+```
+"""
+renderer.render(markdown_text)
+renderer.finalize() # Don't forget to finalize to flush any remaining content!
 ```
 
-## Features
-- Item 1
-- Item 2
-- [x] Completed task
-- [ ] Pending task
+### Rendering Streaming Content
+
+MarkRender shines when dealing with streaming text, like responses from an LLM:
+
+```python
+from markrender import MarkdownRenderer
+import time # For simulating delay
+
+renderer = MarkdownRenderer(theme='dracula', line_numbers=True)
+
+streaming_text = """
+# Quantum Physics ⚛️
+
+Quantum mechanics is a fundamental theory in physics that describes the properties of nature at the scale of atoms and subatomic particles.
+
+## Key Concepts
+
+1. **Superposition**: Particles can exist in multiple states simultaneously.
+2. **Entanglement**: Two or more particles become linked, sharing the same fate.
+
+```python
+# Simple quantum simulation idea
+def measure_qubit():
+    # In a real scenario, this involves quantum hardware
+    return "0" if time.time() % 2 == 0 else "1"
+
+print(f"Qubit measured: {measure_qubit()}")
+```
+
+> [!NOTE]
+> This is a simplified explanation. Quantum physics is much deeper!
+
+For more info, check out [Wikipedia](https://en.wikipedia.org/wiki/Quantum_mechanics).
 """
 
-renderer.render(markdown_text)
-renderer.finalize()
-```
-
-### Streaming LLM Responses
-
-Perfect for rendering streaming responses from LLM APIs:
-
-```python
-from markrender import MarkdownRenderer
-from openai import OpenAI
-
-client = OpenAI()
-renderer = MarkdownRenderer(theme='github-dark')
-
-stream = client.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role": "user", "content": "Explain quantum computing"}],
-    stream=True
-)
-
-for chunk in stream:
-    content = chunk.choices[0].delta.content
-    if content:
-        renderer.render(content)
+# Simulate streaming by chunking the text
+chunk_size = 50
+for i in range(0, len(streaming_text), chunk_size):
+    chunk = streaming_text[i:i + chunk_size]
+    renderer.render(chunk)
+    time.sleep(0.05) # Small delay to simulate real streaming
 
 renderer.finalize()
 ```
 
-## 🎨 Themes
+## 🎨 Customize Your Output
 
-MarkRender includes 7 professional color themes:
+MarkRender is designed to be flexible. You can tailor its appearance to fit your needs:
 
-```python
-# Available themes
-themes = [
-    'github-dark',      # GitHub's dark theme (default)
-    'monokai',          # Popular Monokai theme
-    'dracula',          # Dracula theme
-    'nord',             # Nord color palette
-    'one-dark',         # Atom One Dark
-    'solarized-dark',   # Solarized Dark
-    'solarized-light'   # Solarized Light
-]
+*   **`theme`**: Choose from built-in themes like `'github-dark'` (default), `'monokai'`, `'dracula'`, `'nord'`, `'one-dark'`, `'solarized-dark'`, or `'solarized-light'`.
+    ```python
+    renderer = MarkdownRenderer(theme='monokai')
+    ```
+*   **`code_background`**: Set to `True` to give code blocks a distinct background color. (Default: `False`)
+    ```python
+    renderer = MarkdownRenderer(code_background=True)
+    ```
+*   **`line_numbers`**: Display line numbers in your code blocks. (Default: `True`)
+    ```python
+    renderer = MarkdownRenderer(line_numbers=False) # Turn off line numbers
+    ```
+*   **`inline_code_color`**: Override the theme's default color for `inline code` snippets. You can use standard ANSI color codes or custom RGB values.
+    ```python
+    from markrender.colors import rgb
+    renderer = MarkdownRenderer(inline_code_color=rgb(255, 100, 200)) # A custom pink!
+    ```
+*   **`width`**: Manually set the terminal width in characters. By default, MarkRender auto-detects your terminal's width.
+    ```python
+    renderer = MarkdownRenderer(width=120)
+    ```
 
-# Use a theme
-renderer = MarkdownRenderer(theme='dracula')
-```
+## ⚠️ A Note on Table Rendering
 
-## ⚙️ Configuration
+MarkRender uses the `rich` library for table rendering, which is excellent at adapting tables to your terminal's width. While we strive for perfect output, displaying very complex or wide tables in a narrow terminal environment can sometimes lead to aggressive text wrapping in cells and headers. This is a common challenge in terminal UIs, but MarkRender ensures all content is displayed (wrapped, not truncated) even if it means visually "tall" rows. For the best table appearance, a wider terminal window is always recommended!
 
-Customize the renderer to your needs:
+## 🤝 Contributing
 
-```python
-from markrender import MarkdownRenderer
-from markrender.colors import rgb
-
-renderer = MarkdownRenderer(
-    theme='monokai',                    # Color theme
-    code_background=False,              # Show background in code blocks
-    line_numbers=True,                  # Show line numbers in code
-    inline_code_color=rgb(255, 100, 200),  # Custom inline code color
-    width=100                           # Terminal width (auto-detect by default)
-)
-```
-
-### Parameters
-
-- **theme** (str): Color theme name (default: `'github-dark'`)
-- **code_background** (bool): Show background in code blocks (default: `False`)
-- **line_numbers** (bool): Show line numbers in code blocks (default: `True`)
-- **inline_code_color** (str): Custom ANSI color code for inline code (default: theme's purple variant)
-- **width** (int): Terminal width in characters (default: auto-detect)
-- **output** (file): Output stream (default: `sys.stdout`)
-
-## 📚 Supported Markdown Features
-
-### Headings
-```markdown
-# H1 Heading
-## H2 Heading
-### H3 Heading
-#### H4 Heading
-##### H5 Heading
-###### H6 Heading
-```
-
-### Code Blocks
-````markdown
-```python
-def example():
-    return "Syntax highlighted!"
-```
-````
-
-### Inline Code
-```markdown
-Use `inline code` for short snippets.
-```
-
-### Tables
-```markdown
-| Feature | Supported |
-|---------|-----------|
-| Tables  | ✓         |
-| Borders | ✓         |
-```
-
-### Lists
-```markdown
-- Unordered item 1
-- Unordered item 2
-  - Nested item
-
-1. Ordered item 1
-2. Ordered item 2
-```
-
-### Checkboxes
-```markdown
-- [x] Completed task
-- [ ] Pending task
-```
-
-### Blockquotes
-```markdown
-> This is a blockquote
-> It can span multiple lines
-```
-
-### Links
-```markdown
-[Link text](https://example.com)
-```
-
-### Text Formatting
-```markdown
-**Bold text**
-*Italic text*
-~~Strikethrough~~
-```
-
-### Emojis
-```markdown
-Hello :wave: Let's :rocket: go!
-```
-
-### Horizontal Rules
-```markdown
----
-```
-
-## 🎯 Use Cases
-
-- **AI Chat Applications** - Render LLM responses in CLI tools
-- **Documentation Viewers** - Display markdown documentation in terminal
-- **Code Review Tools** - Show code diffs and comments
-- **Note-Taking Apps** - Terminal-based markdown note viewers
-- **Log Viewers** - Render structured logs with markdown
-
-## 🤝 Comparison with Alternatives
-
-Unlike `rich.Markdown` which can flicker during streaming and has higher computational overhead, MarkRender is specifically optimized for:
-
-- ✅ Smooth streaming without redrawing
-- ✅ Lower CPU usage
-- ✅ GitHub-style markdown rendering
-- ✅ Professional code block styling like Claude CLI, Gemini CLI, and Qwen CLI
-- ✅ Customizable themes and colors
-
-## 🧪 Development
-
-### Setup Development Environment
-
-```bash
-# Clone repository
-git clone https://github.com/Praneeth-Gandodi/markrender.git
-cd markrender
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install development dependencies
-pip install -e ".[dev]"
-```
-
-### Run Tests
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ --cov=markrender --cov-report=html --cov-report=term
-```
-
-### Run Examples
-
-```bash
-# Basic usage
-python examples/basic_usage.py
-
-# Streaming demo
-python examples/streaming_demo.py
-
-# Theme showcase
-python examples/theme_showcase.py
-```
+We welcome contributions! Feel free to open issues or pull requests on our [GitHub repository](https://github.com/Praneeth-Gandodi/markrender).
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Pygments** - Syntax highlighting engine
-- **emoji** - Emoji rendering support
+MarkRender is released under the MIT License. See the [LICENSE](LICENSE) file for more details.

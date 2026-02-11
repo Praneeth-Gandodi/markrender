@@ -28,6 +28,7 @@ classifiers = [
 dependencies = [
     "pygments>=2.7.0",
     "emoji>=1.6.0",
+    "rich>=13.0.0",
 ]
 
 [project.optional-dependencies]

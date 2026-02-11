@@ -41,11 +41,9 @@ class TestMarkdownFormatter:
     
     def test_format_table(self):
         """Test table formatting"""
-        rows = [
-            ["Header1", "Header2"],
-            ["Cell1", "Cell2"]
-        ]
-        result = self.formatter.format_table(rows)
+        header = ["Header1", "Header2"]
+        data_rows = [["Cell1", "Cell2"]]
+        result = self.formatter.format_table(header, data_rows)
         assert "Header1" in result
         assert "Cell2" in result
     

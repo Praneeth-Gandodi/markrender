@@ -13,7 +13,7 @@ def strip_ansi(text):
 class TestMarkdownRendererEdgeCases(unittest.TestCase):
     def setUp(self):
         self.output = io.StringIO()
-        self.renderer = MarkdownRenderer(output=self.output)
+        self.renderer = MarkdownRenderer(output=self.output, force_color=True)
 
     def get_output(self):
         return self.output.getvalue()
