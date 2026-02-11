@@ -121,7 +121,8 @@ renderer = MarkdownRenderer(
 
 ---
 
-> [!Note] A Note on Table Rendering
+**Note**:  A Note on Table Rendering
+
 MarkRender uses the `rich` library for table rendering, which is excellent at adapting tables to your terminal's width. While we strive for perfect output, displaying very complex or wide tables in a narrow terminal environment can sometimes lead to aggressive text wrapping in cells and headers. This is a common challenge in terminal UIs, but MarkRender ensures all content is displayed (wrapped, not truncated) even if it means visually "tall" rows. For the best table appearance, a wider terminal window is always recommended!
 
 ## 🤝 Contributing
