@@ -251,30 +251,151 @@ class MarkdownParser:
     
     def apply_inline_formatting(self, text, formatter):
         """
-        Apply inline formatting (code, bold, italic, links, emoji)
+        Apply inline formatting (bold, italic, links, emoji, code)
         Returns a rich.Text object.
         """
         from rich.text import Text
-        
+
         if not text:
             return Text("")
 
-        # 1. Handle Code Blocks (Highest Priority, disables other formatting)
-        segments = split_by_regex(text, self.INLINE_CODE_PATTERN)
+        # First, apply bold formatting to the entire text
+        bold_segments = split_by_regex(text, self.BOLD_PATTERN)
+        bold_applied_text = Text()
         
+        for bold_seg in bold_segments:
+            if bold_seg['match']:
+                # This segment is bold: **content**
+                bold_content = bold_seg['match'].group(1)
+                # Process inner formatting within the bold content
+                inner_formatted = self._apply_inner_formatting(bold_content, formatter)
+                # Apply bold style to the entire inner content
+                bold_text = formatter.format_bold("")
+                inner_formatted.stylize(bold_text.style)
+                bold_applied_text.append(inner_formatted)
+            else:
+                # Non-bold segment, process other formatting
+                inner_formatted = self._apply_inner_formatting(bold_seg['text'], formatter)
+                bold_applied_text.append(inner_formatted)
+        
+        return bold_applied_text
+    
+    def _apply_inner_formatting(self, text, formatter):
+        """
+        Apply inner formatting (code, italic, links, emoji) to text that may already have outer formatting
+        """
+        from rich.text import Text
+        
+        # Handle inline code
+        code_segments = split_by_regex(text, self.INLINE_CODE_PATTERN)
         final_text = Text()
+        
+        for code_seg in code_segments:
+            if code_seg['match']:
+                # This is inline code: `content`
+                code_content = code_seg['match'].group(1)
+                final_text.append(formatter.format_inline_code(code_content))
+            else:
+                # Non-code segment, process other formatting
+                remaining_text = code_seg['text']
+                
+                # Handle italic
+                italic_segments = split_by_regex(remaining_text, self.ITALIC_PATTERN)
+                italic_applied_text = Text()
+                
+                for italic_seg in italic_segments:
+                    if italic_seg['match']:
+                        # This segment is italic: *content*
+                        italic_content = italic_seg['match'].group(1)
+                        # Process any remaining formatting within italic content
+                        inner_formatted = self._process_remaining_formatting(italic_content, formatter)
+                        # Apply italic style
+                        italic_text = formatter.format_italic("")
+                        inner_formatted.stylize(italic_text.style)
+                        italic_applied_text.append(inner_formatted)
+                    else:
+                        # Non-italic segment
+                        inner_formatted = self._process_remaining_formatting(italic_seg['text'], formatter)
+                        italic_applied_text.append(inner_formatted)
+                
+                final_text.append(italic_applied_text)
+        
+        return final_text
+    
+    def _process_remaining_formatting(self, text, formatter):
+        """
+        Process links, strikethrough, emoji in that order.
+        """
+        from rich.text import Text
+
+        # Handle Links
+        segments = split_by_regex(text, self.LINK_PATTERN)
+        result = Text()
+
+        for segment in segments:
+            content = segment['text']
+            if segment['match']:
+                # It's a link: [text](url)
+                link_text = segment['match'].group(1)
+                link_url = segment['match'].group(2)
+
+                # Recursively process the link text
+                styled_link_text = self._process_remaining_formatting(link_text, formatter)
+
+                # Apply link style
+                formatted_link = formatter.format_link(link_text, link_url)
+                link_style = formatted_link.style
+
+                styled_link_text.stylize(link_style)
+                result.append(styled_link_text)
+            else:
+                # Not a link, process other formatting
+                result.append(self._process_strikethrough_emoji(content, formatter))
+        return result
+    
+    def _process_strikethrough_emoji(self, text, formatter):
+        """
+        Process strikethrough and emoji.
+        """
+        from rich.text import Text
+        
+        # Handle Strikethrough
+        segments = split_by_regex(text, self.STRIKETHROUGH_PATTERN)
+        result = Text()
         
         for segment in segments:
             content = segment['text']
             if segment['match']:
-                # This is a code block
-                code_content = segment['match'].group(1) 
-                final_text.append(formatter.format_inline_code(code_content))
+                # It's strikethrough: ~~content~~
+                strike_content = segment['match'].group(1)
+                styled_strike_text = self._process_emoji_only(strike_content, formatter)
+                styled_strike_text.stylize(formatter.format_strikethrough("").style)
+                result.append(styled_strike_text)
             else:
-                # This is a plain text segment, process other formatting
-                final_text.append(self._process_links_and_styles(content, formatter))
-                
-        return final_text
+                # Not strikethrough
+                result.append(self._process_emoji_only(content, formatter))
+        return result
+    
+    def _process_emoji_only(self, text, formatter):
+        """
+        Process only emoji.
+        """
+        from rich.text import Text
+        
+        # Handle Emoji
+        segments = split_by_regex(text, self.EMOJI_PATTERN)
+        result = Text()
+        
+        for segment in segments:
+            content = segment['text']
+            if segment['match']:
+                # It's an emoji: :emoji:
+                emoji_code = segment['match'].group(1)
+                result.append(formatter.format_emoji(emoji_code))
+            else:
+                # Plain text
+                result.append(Text(content))
+        return result
     
     def _process_links_and_styles(self, text, formatter):
         """
