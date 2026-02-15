@@ -71,6 +71,7 @@ class TestMarkdownRenderer:
         assert "hello" in result
         assert "world" in result
     
+
     def test_render_inline_code(self):
         """Test rendering inline code"""
         output = StringIO()
@@ -105,8 +106,9 @@ class TestMarkdownRenderer:
         renderer.finalize()
         
         result = output.getvalue()
-        assert "✅  Done" in result
-        assert "⬜  Todo" in result
+        # Check that the emojis and text are present in the output (with ANSI codes)
+        assert "✅" in result and "Done" in result
+        assert "⬜" in result and "Todo" in result
     
     def test_render_table(self):
         """Test rendering tables"""
@@ -141,6 +143,8 @@ class TestMarkdownRenderer:
         assert "Head1" in result
         assert "Col19-10" in result
     
+    
+        
     def test_streaming_chunks(self):
         """Test rendering with streaming chunks"""
         output = StringIO()
@@ -214,7 +218,6 @@ class TestMarkdownRenderer:
         # Finalize should process it
         renderer.finalize()
         
-        # Check output contains the text
         result = output.getvalue()
         assert "Incomplete" in result
         
@@ -254,10 +257,10 @@ class TestMarkdownRenderer:
         
         result_with_ansi = output.getvalue()
         result = strip_ansi(result_with_ansi)
-        assert "NOTE: This is a note." in result # Changed expected string to match new format
+        assert "NOTE: This is a note." in result
 
         # Check that it doesn't have the blockquote border
-        assert "│" not in result_with_ansi # Check original result as it has ANSI codes
+        assert "│" not in result_with_ansi
 
     def test_render_regular_blockquote(self):
         """Test rendering a regular blockquote"""

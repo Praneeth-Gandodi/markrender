@@ -41,11 +41,21 @@ class TestMarkdownFormatter:
     
     def test_format_table(self):
         """Test table formatting"""
+        from rich.console import Console, Group
+        from rich.text import Text
+        import io
+        
         header = ["Header1", "Header2"]
         data_rows = [["Cell1", "Cell2"]]
         result = self.formatter.format_table(header, data_rows)
-        assert "Header1" in result
-        assert "Cell2" in result
+        
+        # Result is a Group, we need to render it to check content
+        console = Console(file=io.StringIO(), width=80)
+        console.print(result)
+        output = console.file.getvalue()
+        
+        assert "Header1" in output
+        assert "Cell2" in output
     
     def test_format_list_item_unordered(self):
         """Test unordered list item formatting"""
@@ -69,14 +79,19 @@ class TestMarkdownFormatter:
     
     def test_format_blockquote(self):
         """Test blockquote formatting"""
-        result = self.formatter.format_blockquote("Quote text")
+        result = self.formatter.format_blockquote([("Quote text", 1)])
         assert "Quote text" in result
     
     def test_format_link(self):
         """Test link formatting"""
         result = self.formatter.format_link("Link Text", "https://example.com")
-        assert "Link Text" in result
-        assert "example.com" in result
+        # Check that the text is present in the result
+        assert "Link Text" in str(result)
+        # Check that the link style contains the URL
+        if result.spans:
+            assert any("https://example.com" in str(span.style) for span in result.spans)
+        else:
+            assert "link=https://example.com" in str(result.style)
     
     def test_format_hr(self):
         """Test horizontal rule formatting"""

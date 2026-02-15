@@ -68,5 +68,15 @@ Thumbs.db
 
 # test files
 test_all_fixes.py
-test_emoji.py    
+test_emoji.py
 test_simple.py
+prompt.md
+debug_output.py
+test_code_header.py
+test_comprehensive_colors.py
+test_functionality.py
+test_terminal_output.py
+final_demo.py
+simple_test.py
+test_final_code_headers.py
+test_table_rendering.py

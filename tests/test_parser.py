@@ -74,7 +74,8 @@ class TestMarkdownParser:
     def test_parse_blockquote(self):
         """Test parsing blockquote"""
         result = self.parser.parse_blockquote("> Quote")
-        assert result == "Quote"
+        # Now returns (text, nesting_level)
+        assert result == ("Quote", 1)
     
     def test_is_hr(self):
         """Test horizontal rule detection"""
@@ -105,8 +106,15 @@ class TestMarkdownParser:
         """Test link formatting"""
         text = "[Link](https://example.com)"
         result = self.parser.apply_inline_formatting(text, self.formatter)
-        assert "Link" in result
-        assert "example.com" in result
+        assert "Link" in result.plain
+        
+        # Check if link URL is in style
+        link_found = False
+        for span in result.spans:
+             if "link=https://example.com" in str(span.style):
+                 link_found = True
+                 break
+        assert link_found
     
     def test_apply_inline_formatting_emoji(self):
         """Test emoji formatting"""

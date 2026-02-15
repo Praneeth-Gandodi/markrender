@@ -26,9 +26,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "pygments>=2.7.0",
-    "emoji>=1.6.0",
-    "rich>=13.0.0",
+    "pygments>=2.19.2",
+    "emoji>=2.15.0",
+    "rich>=14.3.2",
+    "colorama>=0.4.6",
 ]
 
 [project.optional-dependencies]

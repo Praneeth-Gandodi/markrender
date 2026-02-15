@@ -26,6 +26,8 @@ SYNTAX_THEMES = {
         'checkbox_checked': rgb(46, 160, 67),  # Green
         'hr': Colors.BRIGHT_BLACK,
         'note_color': rgb(229, 192, 123),
+        'list_marker': rgb(88, 166, 255),
+        'table_header': rgb(88, 166, 255),
     },
     'monokai': {
         'name': 'monokai',
@@ -46,6 +48,8 @@ SYNTAX_THEMES = {
         'checkbox_checked': rgb(166, 226, 46),
         'hr': rgb(117, 113, 94),
         'note_color': rgb(230, 219, 116),
+        'list_marker': rgb(102, 217, 239),  # Cyan
+        'table_header': rgb(249, 38, 114),  # Pink
     },
     'dracula': {
         'name': 'dracula',
@@ -66,6 +70,8 @@ SYNTAX_THEMES = {
         'checkbox_checked': rgb(80, 250, 123),
         'hr': rgb(98, 114, 164),
         'note_color': rgb(241, 250, 140),
+        'list_marker': rgb(189, 147, 249),  # Purple
+        'table_header': rgb(255, 121, 198),  # Pink
     },
     'nord': {
         'name': 'nord',
@@ -86,6 +92,8 @@ SYNTAX_THEMES = {
         'checkbox_checked': rgb(163, 190, 140),
         'hr': rgb(76, 86, 106),
         'note_color': rgb(235, 203, 139),
+        'list_marker': rgb(136, 192, 208),  # Frost blue
+        'table_header': rgb(136, 192, 208),
     },
     'one-dark': {
         'name': 'one-dark',
@@ -106,6 +114,8 @@ SYNTAX_THEMES = {
         'checkbox_checked': rgb(152, 195, 121),
         'hr': rgb(92, 99, 112),
         'note_color': rgb(229, 192, 123),
+        'list_marker': rgb(97, 175, 239),
+        'table_header': rgb(224, 108, 117),
     },
     'solarized-dark': {
         'name': 'solarized-dark',
@@ -126,6 +136,8 @@ SYNTAX_THEMES = {
         'checkbox_checked': rgb(133, 153, 0),
         'hr': rgb(88, 110, 117),
         'note_color': rgb(181, 137, 0),
+        'list_marker': rgb(38, 139, 210),
+        'table_header': rgb(133, 153, 0),
     },
     'solarized-light': {
         'name': 'solarized-light',
@@ -146,6 +158,8 @@ SYNTAX_THEMES = {
         'checkbox_checked': rgb(133, 153, 0),
         'hr': rgb(147, 161, 161),
         'note_color': rgb(181, 137, 0),
+        'list_marker': rgb(38, 139, 210),
+        'table_header': rgb(133, 153, 0),
     },
 }
 

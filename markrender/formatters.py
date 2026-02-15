@@ -6,44 +6,122 @@ Handles rendering of headings, code, tables, lists, and more
 import re
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name, TextLexer
-from pygments.formatters import Terminal256Formatter
+from pygments.formatters import Terminal256Formatter, TerminalTrueColorFormatter
 from pygments.util import ClassNotFound
 try:
     import emoji as emoji_lib
 except ImportError:
     emoji_lib = None
 
-try:
-    from rich.table import Table
-    from rich.console import Console
-    from rich.text import Text
-    from io import StringIO
-    rich_available = True
-except ImportError:
-    rich_available = False
+# Imports for Rich library
+from rich.table import Table
+from rich.console import Console, Group
+from rich.text import Text
+from rich.ansi import AnsiDecoder
+from io import StringIO
+rich_available = True # Assuming rich is installed based on pyproject.toml
 
-from .colors import colorize, Colors, get_terminal_width
+from .colors import Colors, get_terminal_width, get_rich_color_style, colorize
 
 
 class MarkdownFormatter:
     """Formats markdown elements for terminal output"""
-    
-    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None, force_color=False):
-        """
-        Initialize formatter
+    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None, force_color=False, output=None):
+            """
+            Initialize formatter
+
+            Args:
+                theme_config: Theme configuration dict
+                inline_code_color: Custom color for inline code (default from theme)
+                code_background: Whether to show background in code blocks
+                width: Terminal width (auto-detect if None)
+                force_color: Force color output (bypasses terminal capability check)
+                output: Output file object (to determine if we should force colors)
+            """
+            self.theme = theme_config
+            self.inline_code_color = inline_code_color or theme_config['inline_code']
+            self.code_background = code_background
+            self.width = width or get_terminal_width()
+            self.force_color = force_color
+            self._line_counter = 0
+            
+            # Determine if we should force terminal features based on output
+            should_force_terminal = self.force_color
+            if output and not hasattr(output, 'isatty'):
+                # If output doesn't have isatty (like StringIO), force terminal features for colors
+                should_force_terminal = True
+            elif output and hasattr(output, 'isatty'):
+                should_force_terminal = output.isatty() or self.force_color
+            
+            if rich_available:
+                # Force color system to truecolor to ensure RGB colors are used
+                # Only use StringIO if an output file is provided, otherwise use default (stdout)
+                console_kwargs = {
+                    'width': self.width,
+                    'force_terminal': should_force_terminal,
+                    'color_system': "truecolor"  # Force truecolor support to ensure RGB codes
+                }
+                if output:
+                    console_kwargs['file'] = output
+                
+                self.console = Console(**console_kwargs) # Keep force_terminal as it's a useful override
+                self.ansi_decoder = AnsiDecoder()
+            else:
+                self.console = None
+                self.ansi_decoder = None
+    def start_code_block(self, language='', line_numbers=True):
+        self._line_counter = 0
+        from rich.text import Text
+        if language:
+            # Use Rich Text for consistent formatting
+            rich_style = get_rich_color_style(Colors.BRIGHT_MAGENTA)
+            return Text(f'\n{language}\n', style=rich_style)
+        return Text('\n')
+
+    def stream_code_line(self, line, language='', line_numbers=True):
+        self._line_counter += 1
+        num_width = len(str(self._line_counter))
         
-        Args:
-            theme_config: Theme configuration dict
-            inline_code_color: Custom color for inline code (default from theme)
-            code_background: Whether to show background in code blocks
-            width: Terminal width (auto-detect if None)
-            force_color: Force color output (bypasses terminal capability check)
-        """
-        self.theme = theme_config
-        self.inline_code_color = inline_code_color or theme_config['inline_code']
-        self.code_background = code_background
-        self.width = width or get_terminal_width()
-        self.force_color = force_color
+        # Get lexer for single line highlighting, fallback to TextLexer
+        try:
+            if language:
+                lexer = get_lexer_by_name(language, stripall=True)
+            else:
+                lexer = TextLexer()
+        except ClassNotFound:
+            lexer = TextLexer()
+        
+        formatter = TerminalTrueColorFormatter(style=self.theme.get('pygments_style', 'monokai'))
+        
+        # Preserve leading whitespace for indentation
+        leading_whitespace = ''
+        if line:
+            match = re.match(r'^\s*', line)
+            if match:
+                leading_whitespace = match.group(0)
+
+        highlighted_ansi = highlight(line.strip(), lexer, formatter).rstrip()
+        
+        # Convert Pygments ANSI output to rich.Text
+        highlighted_rich_text = Text.from_ansi(highlighted_ansi)
+        
+        # Combine leading whitespace with highlighted content
+        full_line = Text(leading_whitespace) + Text.from_ansi(highlighted_ansi)
+
+        if line_numbers:
+            line_num_text = Text(f'{self._line_counter:>{num_width}}', style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            if self.code_background:
+                # Need to apply background to the line number Text object
+                line_num_text.stylize(get_rich_color_style(Colors.BG_BRIGHT_BLACK))
+                return Text.assemble(line_num_text, " ", full_line, "\n")
+            else:
+                return Text.assemble(" ", line_num_text, "  ", full_line, "\n")
+        else:
+            return Text.assemble(full_line, "\n")
+    
+    def end_code_block(self, language=''):
+        self._line_counter = 0
+        return '\n'
     
     def format_heading(self, level, text):
         """
@@ -51,24 +129,28 @@ class MarkdownFormatter:
         
         Args:
             level: Heading level (1-6)
-            text: Heading text
+            text: Heading text (str or Text)
         
         Returns:
-            Formatted heading string
+            Formatted heading rich.Text object
         """
         level = max(1, min(6, level))  # Clamp to 1-6
-        color = self.theme['heading_colors'].get(level, Colors.WHITE)
+        color_code = self.theme['heading_colors'].get(level, Colors.WHITE)
+        rich_style = get_rich_color_style(color_code)
+        
+        if isinstance(text, str):
+            rich_text = Text(text)
+        else:
+            rich_text = text.copy()
+
+        rich_text.stylize(rich_style)
         
         # Different symbols for different heading levels
-        if level == 1:
-            text = colorize(f'{text}', color + Colors.BOLD, force_color=self.force_color)
-            return f'\n{text}\n'
-        elif level == 2:
-            text = colorize(f'{text}', color + Colors.BOLD, force_color=self.force_color)
-            return f'\n{text}\n'
+        if level <= 2:
+            rich_text.stylize(get_rich_color_style(Colors.BOLD))
+            return Text.assemble("\n", rich_text, "\n")
         else:
-            text = colorize(f'{text}', color, force_color=self.force_color)
-            return f'\n{text}\n'
+            return Text.assemble("\n", rich_text, "\n")
     
     def format_code_block(self, code, language='', line_numbers=True):
         """
@@ -80,7 +162,7 @@ class MarkdownFormatter:
             line_numbers: Whether to show line numbers
         
         Returns:
-            Formatted code block string
+            Formatted code block rich.Text object or string
         """
         # Get lexer
         try:
@@ -91,231 +173,259 @@ class MarkdownFormatter:
         except ClassNotFound:
             lexer = TextLexer()
         
-        # Format code with pygments
-        formatter = Terminal256Formatter(style=self.theme.get('pygments_style', 'monokai'))
-        highlighted = highlight(code, lexer, formatter).rstrip()
+        # Format code with pygments to ANSI
+        formatter = TerminalTrueColorFormatter(style=self.theme.get('pygments_style', 'monokai'))
+        highlighted_ansi = highlight(code, lexer, formatter).rstrip()
+        
+        # Convert ANSI to rich.Text
+        highlighted_rich_text = Text.from_ansi(highlighted_ansi)
         
         # Add line numbers if requested
         if line_numbers:
-            lines = highlighted.split('\n')
+            lines = highlighted_rich_text.split('\n')
             max_line_num = len(lines)
             num_width = len(str(max_line_num))
             
-            formatted_lines = []
-            for i, line in enumerate(lines, 1):
-                line_num = colorize(f'{i:>{num_width}}', Colors.BRIGHT_BLACK, force_color=self.force_color)
+            formatted_rich_lines = Text()
+            for i, rich_line in enumerate(lines, 1):
+                line_num_text = Text(f'{i:>{num_width}}', style=get_rich_color_style(Colors.BRIGHT_BLACK))
                 # Add background if requested
                 if self.code_background:
-                    formatted_lines.append(f'{Colors.BG_BRIGHT_BLACK} {line_num} {Colors.RESET} {line}')
+                    line_num_text.stylize(get_rich_color_style(Colors.BG_BRIGHT_BLACK))
+                    formatted_rich_lines.append(Text.assemble(line_num_text, " ", rich_line, "\n"))
                 else:
-                    formatted_lines.append(f' {line_num}  {line}')
+                    formatted_rich_lines.append(Text.assemble(" ", line_num_text, "  ", rich_line, "\n"))
             
-            result = '\n'.join(formatted_lines)
+            result = formatted_rich_lines
         else:
-            result = highlighted
+            result = highlighted_rich_text
         
         # Add spacing
-        return f'\n{result}\n'
+        return Text.assemble("\n", result, "\n")
     
-    def format_inline_code(self, text):
+    def format_inline_code(self, text: str) -> Text:
         """
-        Format inline code with custom color
-        
-        Args:
-            text: Code text
-        
-        Returns:
-            Formatted inline code string
+        Format inline code by returning a rich Text object.
         """
-        return colorize(f'{text}', self.inline_code_color, force_color=self.force_color)
+        style = get_rich_color_style(self.inline_code_color)
+        return Text(text, style=style)
     
+
     def format_table(self, header, data_rows):
         """
-        Format markdown table with borders using rich
+        Format markdown table with borders using rich.
         
         Args:
-            header: List of strings for table header
-            data_rows: List of lists of strings representing table data rows
+            header: List of rich.Text or str for table header
+            data_rows: List of lists of rich.Text or str representing table data rows
         
         Returns:
-            Formatted table string
+            Formatted table string or rich object
         """
         if not rich_available or not header:
-            return ''
+            # Fallback to a simpler table format if rich is not available
+            if not header:
+                return ""
+            header_line = " | ".join(str(h) for h in header)
+            separator = "-" * len(header_line)
+            data_lines = [" | ".join(str(c) for c in row) for row in data_rows]
+            return '\n' + '\n'.join([header_line, separator] + data_lines) + '\n'
 
         # Initialize rich Table
-        table = Table(show_header=True, header_style="bold magenta", expand=True)
+        border_color_code = self.theme.get('table_border')
+        if border_color_code and isinstance(border_color_code, str):
+             # Try to convert if it's ANSI
+             rich_border_color = get_rich_color_style(border_color_code)
+             table_border_style = rich_border_color if rich_border_color else "none"
+        else:
+             table_border_style = "none"
+             
+        # table_header is now an ANSI color code, convert to rich style
+        header_color_code = self.theme.get('table_header')
+        if header_color_code:
+            rich_header_color = get_rich_color_style(header_color_code)
+            header_style = f"bold {rich_header_color}" if rich_header_color else "bold magenta"
+        else:
+            header_style = "bold magenta"
+            
+        table = Table(show_header=True, header_style=header_style, border_style=table_border_style)
 
         # Add columns
-        for col_title in header: # Allow headers to wrap
+        for col_title in header:
             table.add_column(col_title)
 
         # Add data rows
         for row_data in data_rows:
-            table.add_row(*[str(cell) for cell in row_data])
+            table.add_row(*row_data)
 
-        # Render table to string
-        console = Console(file=StringIO(), width=self.width, force_terminal=True)
-        console.print(table)
-        output = console.file.getvalue()
-        
-        # Rich adds a newline, we might not want that if we add more
-        return '\n' + output.rstrip() + '\n'
+        # Return Group with spacing
+        return Group(Text("\n"), table, Text("\n"))
 
     
-    def format_list_item(self, text, ordered=False, number=1, indent_level=0):
+    def format_list_item(self, text: Text, ordered=False, number=1, indent_level=0) -> Text:
         """
         Format list item (bullet or numbered)
-        
-        Args:
-            text: List item text
-            ordered: Whether this is an ordered list
-            number: Item number (for ordered lists)
-            indent_level: Indentation level
-        
-        Returns:
-            Formatted list item string
         """
-        indent = '  ' * indent_level
+        indent = Text('  ' * indent_level)
+        marker_style = get_rich_color_style(self.theme.get('list_marker', Colors.BRIGHT_BLUE))
         if ordered:
-            marker = colorize(f'{number}.', Colors.BRIGHT_BLUE, force_color=self.force_color)
+            marker = Text(f'{number}.', style=marker_style)
         else:
-            marker = colorize('•', Colors.BRIGHT_BLUE, force_color=self.force_color)
+            marker = Text('•', style=marker_style)
         
-        return f'{indent}{marker} {text}'
+        if isinstance(text, str):
+            text_obj = Text.from_markup(text)
+        else:
+            text_obj = text
+            
+        return Text.assemble(indent, marker, " ", text_obj)
     
-    def format_checkbox(self, checked, text):
+    def format_checkbox(self, checked, text: Text) -> Text:
         """
         Format checkbox (task list item)
-        
-        Args:
-            checked: Whether checkbox is checked
-            text: Checkbox text
-        
-        Returns:
-            Formatted checkbox string
         """
         if checked:
-            box = colorize('✅', self.theme['checkbox_checked'], force_color=self.force_color)
+            box = Text('✅', style=get_rich_color_style(self.theme['checkbox_checked']))
         else:
-            box = colorize('⬜', self.theme['checkbox_unchecked'], force_color=self.force_color)
+            box = Text('⬜', style=get_rich_color_style(self.theme['checkbox_unchecked']))
         
-        return f'{box}  {text}'
+        return Text.assemble(box, "  ", Text.from_markup(text) if isinstance(text, str) else text)
     
-    def format_blockquote(self, text, nesting_level=0):
+    def format_blockquote(self, lines_data: list[tuple[str, int]]) -> Text:
         """
         Format blockquote with border
-
-        Args:
-            text: Blockquote text
-            nesting_level: The nesting level of the blockquote
-
-        Returns:
-            Formatted blockquote string
         """
-        stripped_text_first_line = text.strip().split('\n')[0] # Only check first line for callout
-        callout_types = {
-            "NOTE": self.theme.get('note_color', Colors.CYAN),
-            "TIP": self.theme.get('tip_color', Colors.GREEN),
-            "IMPORTANT": self.theme.get('important_color', Colors.MAGENTA),
-            "WARNING": self.theme.get('warning_color', Colors.YELLOW),
-            "CAUTION": self.theme.get('caution_color', Colors.RED),
-            "ATTENTION": self.theme.get('attention_color', Colors.RED), # Adding common callout
-        }
+        if not lines_data:
+            return Text("")
+
+        # Helper to get callout type from the first line
+        first_line_content, base_nesting_level = lines_data[0]
+        # Ensure it's string for regex
+        stripped_first_line = str(first_line_content).strip()
         
-        # Regex to detect `[!TYPE]` at the beginning of the text
-        callout_match = re.match(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION)\]\s*(.*)', stripped_text_first_line, re.IGNORECASE)
+        # Check for callout syntax: [!TYPE] Content
+        callout_match = re.match(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION)\]\s*(.*)', stripped_first_line, re.IGNORECASE)
 
         if callout_match:
             callout_type = callout_match.group(1).upper()
             message_first_line = callout_match.group(2).strip()
             
-            # Reconstruct the full message, removing the matched callout syntax from the first line
-            full_message = message_first_line
-            if '\n' in text:
-                # Append remaining lines of the blockquote to the message
-                full_message += '\n' + '\n'.join(text.strip().split('\n')[1:])
+            callout_colors = {
+                "NOTE": self.theme.get('note_color', Colors.CYAN),
+                "TIP": self.theme.get('tip_color', Colors.GREEN),
+                "IMPORTANT": self.theme.get('important_color', Colors.MAGENTA),
+                "WARNING": self.theme.get('warning_color', Colors.YELLOW),
+                "CAUTION": self.theme.get('caution_color', Colors.RED),
+                "ATTENTION": self.theme.get('attention_color', Colors.RED),
+            }
+            type_color = callout_colors.get(callout_type, Colors.WHITE)
             
-            type_color = callout_types.get(callout_type, Colors.WHITE)
-            
-            formatted_type = colorize(f'{callout_type}:', Colors.BOLD + type_color, force_color=self.force_color)
-            
-            # Format each line of the message separately to apply color
-            formatted_message_lines = [colorize(line, type_color, force_color=self.force_color) for line in full_message.split('\n')]
-            
-            # Reassemble without the blockquote border, just indentation
-            indentation = '  ' * nesting_level
-            # The first line has the type and the message. Subsequent lines are just message.
-            lines = [f'{indentation} {formatted_type} {formatted_message_lines[0]}'] + \
-                    [f'{indentation}   {line}' for line in formatted_message_lines[1:]] # Indent subsequent lines
-            return '\n'.join(lines)
+            # Icon mapping
+            callout_icons = {
+                "NOTE": "ℹ️",
+                "TIP": "💡",
+                "IMPORTANT": "‼",
+                "WARNING": "⚠️",
+                "CAUTION": "🛑",
+                "ATTENTION": "🚨"
+            }
+            icon = callout_icons.get(callout_type, "")
 
-        # Fallback to generic blockquote formatting
-        border_char = colorize('│', self.theme['blockquote_border'], force_color=self.force_color)
-        indentation = '  ' * nesting_level
-        lines = text.split('\n')
-        formatted = [f'{indentation}{border_char} {line}' for line in lines]
-        return '\n'.join(formatted)
+            # Format the callout header
+            header_text = Text.assemble(
+                Text(f"{icon} {callout_type}", style=get_rich_color_style(Colors.BOLD + type_color)),
+                ": " if message_first_line else ""
+            )
+            
+            assembled_lines = []
+            
+            # Indentation for the block itself
+            indent_str = '  ' * max(0, base_nesting_level - 1)
+            
+            # First line
+            first_line_text = Text.assemble(
+                Text(indent_str), 
+                header_text, 
+                Text.from_markup(message_first_line) if isinstance(message_first_line, str) else message_first_line
+            )
+            # Apply color to the user's text as well (?) or just the bar?
+            # Let's style the whole line
+            # first_line_text.stylize(get_rich_color_style(type_color))
+            # But header already has style.
+            # Rich styling merges.
+            assembled_lines.append(first_line_text)
+
+            # Subsequent lines
+            for i in range(1, len(lines_data)):
+                line_content, line_level = lines_data[i]
+                current_indent = '  ' * max(0, line_level - 1)
+                
+                line_text = Text.assemble(
+                     Text(current_indent),
+                     Text("  "),
+                     Text.from_markup(line_content.strip()) if isinstance(line_content, str) else line_content
+                )
+                line_text.stylize(get_rich_color_style(type_color))
+                assembled_lines.append(line_text)
+                
+            return Text.assemble(*assembled_lines, "\n")
+
+        # Standard Blockquote Rendering with Nesting Support
+        assembled_text = Text()
+        border_char = '│'
+        border_style = get_rich_color_style(self.theme['blockquote_border'])
+        
+        for i, (line_str, line_level) in enumerate(lines_data):
+            # For each nesting level, add a border char and space
+            prefix = Text()
+            for _ in range(max(1, line_level)):
+                prefix.append(border_char, style=border_style)
+                prefix.append(" ")
+            
+            content = Text.from_markup(line_str) if isinstance(line_str, str) else line_str
+            assembled_text.append(Text.assemble(prefix, content))
+            
+            if i < len(lines_data) - 1:
+                assembled_text.append("\n")
+                
+        return assembled_text
     
-    def format_link(self, text, url):
+    def format_link(self, text: str, url: str) -> Text:
         """
-        Format link with OSC 8 ANSI escape sequence for clickable links
-        
-        Args:
-            text: Link text
-            url: Link URL
-        
-        Returns:
-            Formatted link string
+        Format link by returning a rich Text object.
         """
-        link_color = self.theme['link']
-        
-        # OSC 8 hyperlink format: \x1b]8;;URL\x1b\\TEXT\x1b]8;;\x1b\\
-        osc_start = f'\x1b]8;;{url}\x1b\\'
-        osc_end = '\x1b]8;;\x1b\\'
-        
-        # Colorize and underline the link text
-        colored_text = colorize(text, link_color + Colors.UNDERLINE, force_color=self.force_color)
-        
-        return f'{osc_start}{colored_text}{osc_end}'
+        link_style = get_rich_color_style(self.theme['link']) + " underline"
+        full_style = f"{link_style} link={url}"
+        return Text(text, style=full_style)
     
-    def format_hr(self):
+    def format_hr(self) -> Text:
         """
         Format horizontal rule
-        
-        Returns:
-            Formatted horizontal rule string
         """
         width = min(self.width, 80)
         line = '─' * width
-        return '\n' + colorize(line, self.theme['hr'], force_color=self.force_color) + '\n'
+        return Text.assemble("\n", Text(line, style=get_rich_color_style(self.theme['hr'])), "\n")
     
-    def format_emoji(self, emoji_code):
+    def format_emoji(self, emoji_code: str) -> Text:
         """
-        Convert emoji code to emoji character
-        
-        Args:
-            emoji_code: Emoji code (e.g., 'smile', 'fire')
-        
-        Returns:
-            Emoji character or original code if not found
+        Convert emoji code to emoji character, with fallback.
         """
         if emoji_lib:
             try:
-                # Emojize does not take force_color parameter, it returns raw emoji
-                return emoji_lib.emojize(f':{emoji_code}:', language='alias')
+                char = emoji_lib.emojize(f':{emoji_code}:', language='alias')
+                return Text(char)
             except Exception:
                 pass
-        return f':{emoji_code}:'
+        return Text(f":{emoji_code}:", style=get_rich_color_style(Colors.YELLOW))
     
-    def format_bold(self, text):
-        """Format bold text"""
-        return colorize(text, Colors.BOLD, force_color=self.force_color)
+    def format_bold(self, text: str) -> Text:
+        """Format bold text."""
+        return Text(text, style=get_rich_color_style(Colors.BOLD))
     
-    def format_italic(self, text):
-        """Format italic text"""
-        return colorize(text, Colors.ITALIC, force_color=self.force_color)
+    def format_italic(self, text: str) -> Text:
+        """Format italic text."""
+        return Text(text, style=get_rich_color_style(Colors.ITALIC))
     
-    def format_strikethrough(self, text):
-        """Format strikethrough text"""
-        return colorize(text, Colors.DIM, force_color=self.force_color)
+    def format_strikethrough(self, text: str) -> Text:
+        """Format strikethrough text."""
+        return Text(text, style=get_rich_color_style(Colors.DIM) + " strike")

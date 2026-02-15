@@ -9,7 +9,8 @@ MarkRender is a Python library designed to bring beautifully rendered markdown d
 * **Streaming Optimized**: Renders markdown chunks as they arrive, perfect for LLM interactions.
 * **Gorgeous Themes**: Comes with several built-in color themes to match your terminal aesthetic.
 * **Smart Syntax Highlighting**: Powered by Pygments, it makes your code blocks pop.
-* **Full Markdown Support**: Handles everything from headings and lists to tables, checkboxes, emojis, and links.
+* **Full Markdown Support**: Handles everything from headings and lists to tables, checkboxes, emojis, and links with robust streaming support.
+* **Cross-Platform**: Works on Windows, macOS, and Linux.
 
 ## 🚀 Get Started
 
@@ -19,6 +20,13 @@ It's super easy to get MarkRender up and running:
 
 ```bash
 pip install git+https://github.com/Praneeth-Gandodi/markrender.git
+```
+
+Or, for development, clone the repository and install in editable mode:
+```bash
+git clone https://github.com/Praneeth-Gandodi/markrender.git
+cd markrender
+pip install -e .
 ```
 
 ### Quick Usage
@@ -94,6 +102,30 @@ for chunk in stream:
 renderer.finalize() 
 ```
 
+## 🎨 Advanced Configuration
+
+You can customize the renderer's appearance and behavior with the following parameters:
+
+```python
+from markrender import MarkdownRenderer
+
+renderer = MarkdownRenderer(
+    theme='monokai',         # Set the color style
+    line_numbers=True,       # Show numbers next to code lines
+    code_background=True,    # Add a background color to code blocks
+    force_color=True,        # Always show colors
+    stream_code=True         # Render code blocks line-by-line
+)
+```
+
+### Non-Streaming Code Blocks
+
+If you prefer to render code blocks all at once after the entire block has been received, you can set `stream_code=False`. This is useful if you want to avoid seeing incomplete code blocks during streaming.
+
+```python
+renderer = MarkdownRenderer(stream_code=False)
+```
+
 ## Available themes
 
 * github-dark
@@ -104,26 +136,12 @@ renderer.finalize()
 * solarized-dark
 * solarized-light
 
-How to change theme
-
-```python
-
-from markrender import MarkdownRenderer
-
-renderer = MarkdownRenderer(
-    theme='monokai',         # Set the color style
-    line_numbers=True,       # Show numbers next to code lines
-    code_background=True,    # Add a background color to code blocks
-    force_color=True         # Always show colors
-)
-
-```
 
 ---
 
-**Note**:  A Note on Table Rendering
+## 📊 Table Rendering Excellence
 
-MarkRender uses the `rich` library for table rendering, which is excellent at adapting tables to your terminal's width. While we strive for perfect output, displaying very complex or wide tables in a narrow terminal environment can sometimes lead to aggressive text wrapping in cells and headers. This is a common challenge in terminal UIs, but MarkRender ensures all content is displayed (wrapped, not truncated) even if it means visually "tall" rows. For the best table appearance, a wider terminal window is always recommended!
+MarkRender provides robust table rendering powered by the `rich` library. Tables are beautifully formatted with proper alignment, borders, and theme-appropriate colors. The renderer handles streaming edge cases gracefully, ensuring tables render correctly even when content arrives in chunks.
 
 ## 🤝 Contributing
 
