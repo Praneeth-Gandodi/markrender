@@ -26,16 +26,16 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "pygments>=2.19.2",
-    "emoji>=2.15.0",
-    "rich>=14.3.2",
-    "colorama>=0.4.6",
+    "pygments~=2.19.2",
+    "emoji~=2.15.0",
+    "rich~=14.3.2",
+    "colorama~=0.4.6",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=6.0.0",
-    "pytest-cov>=2.10.0",
+    "pytest~=6.0.0",
+    "pytest-cov~=2.10.0",
 ]
 
 [project.urls]
