@@ -31,7 +31,7 @@ pip install -e .
 
 To render a Markdown string, create a `MarkdownRenderer` instance and use its `render` method:
 
-```python
+````python
 from markrender import MarkdownRenderer
 
 renderer = MarkdownRenderer()
@@ -68,13 +68,13 @@ def hello_world():
 
 renderer.render(markdown_text)
 renderer.finalize()
-```
+````
 
 ## Streaming Usage
 
 MarkRender is ideal for rendering content that arrives in chunks, such as from an API response. The `render` method can be called multiple times with partial content.
 
-```python
+````python
 import time
 from markrender import MarkdownRenderer
 
@@ -94,7 +94,7 @@ for chunk in markdown_stream:
     time.sleep(0.5)
 
 renderer.finalize()
-```
+````
 
 ## Customization
 
