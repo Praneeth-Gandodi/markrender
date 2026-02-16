@@ -4,10 +4,20 @@ Main markdown renderer for streaming LLM responses
 
 import sys
 import re
+import io
 from .parser import MarkdownParser
 from .formatters import MarkdownFormatter
 from .themes import get_theme
 from .colors import get_terminal_width
+
+
+# Ensure UTF-8 encoding on Windows
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except (AttributeError, io.UnsupportedOperation):
+        # Fallback for older Python versions or when stdout is redirected
+        pass
 
 
 class MarkdownRenderer:
@@ -264,27 +274,74 @@ class MarkdownRenderer:
         # Blockquote handling
         # Parse blockquote using the new parser method which returns (text, level)
         blockquote_data = self.parser.parse_blockquote(line)
-        if blockquote_data:
-            blockquote_text, nesting_level = blockquote_data
-            
+        box_blockquote_data = self.parser.parse_box_blockquote(line)
+        
+        if blockquote_data or box_blockquote_data:
+            if blockquote_data:
+                blockquote_text, nesting_level = blockquote_data
+            else:
+                blockquote_text, nesting_level = box_blockquote_data
+
             if self.in_table:
                 self._flush_table()
-                
+
             if not self.in_blockquote:
                 self.in_blockquote = True
                 self.blockquote_lines = []
-            
+
             self.blockquote_lines.append((blockquote_text.strip(), nesting_level))
             return
         elif self.in_blockquote:
-            # The blockquote has ended, so we need to format and print it.
-            formatted = self.formatter.format_blockquote(self.blockquote_lines)
-            self._write(formatted + '\n')
-            self.in_blockquote = False
-            self.blockquote_lines = []
-            # After flushing the blockquote, process the current line
-            self._process_line(line)
-            return
+            # Check if this line continues the blockquote
+            # Continuation conditions:
+            # 1. Line starts with whitespace (indented continuation)
+            # 2. Line starts with │ or | (another box blockquote line)
+            # 3. Line is a sentence continuation (starts with lowercase, indicating wrapped text)
+            # BUT NOT if it's a horizontal rule or other block element
+            is_sentence_continuation = stripped and stripped[0].islower()
+            is_block_element = self.parser.is_hr(stripped)
+            
+            # Empty line ends the blockquote
+            if not stripped:
+                # Apply inline formatting to blockquote lines before rendering
+                formatted_lines = []
+                for line_content, line_level in self.blockquote_lines:
+                    formatted_text = self.parser.apply_inline_formatting(line_content, self.formatter)
+                    formatted_lines.append((formatted_text, line_level))
+                formatted = self.formatter.format_blockquote(formatted_lines)
+                self._write(formatted + '\n')
+                self.in_blockquote = False
+                self.blockquote_lines = []
+                if is_block_element:
+                    # Process the block element
+                    self._process_line(line)
+                return
+            
+            if (line.startswith(' ') or 
+                line.startswith('\t') or
+                self.parser.parse_box_blockquote(line) or
+                (is_sentence_continuation and not is_block_element)):
+                # This is a continuation of the blockquote
+                if self.parser.parse_box_blockquote(line):
+                    bb_data = self.parser.parse_box_blockquote(line)
+                    self.blockquote_lines.append((bb_data[0].strip(), bb_data[1]))
+                else:
+                    self.blockquote_lines.append((stripped, 1))
+                return
+            else:
+                # The blockquote has ended, so we need to format and print it.
+                # Apply inline formatting to blockquote lines before rendering
+                formatted_lines = []
+                for line_content, line_level in self.blockquote_lines:
+                    formatted_text = self.parser.apply_inline_formatting(line_content, self.formatter)
+                    formatted_lines.append((formatted_text, line_level))
+                formatted = self.formatter.format_blockquote(formatted_lines)
+                self._write(formatted + '\n')
+                self.in_blockquote = False
+                self.blockquote_lines = []
+                # After flushing the blockquote, process the current line
+                self._process_line(line)
+                return
 
         # Horizontal rule
         if self.parser.is_hr(stripped):
@@ -366,7 +423,12 @@ class MarkdownRenderer:
             self._flush_table()
         
         if self.in_blockquote and self.blockquote_lines:
-            formatted = self.formatter.format_blockquote(self.blockquote_lines)
+            # Apply inline formatting to blockquote lines before rendering
+            formatted_lines = []
+            for line_content, line_level in self.blockquote_lines:
+                formatted_text = self.parser.apply_inline_formatting(line_content, self.formatter)
+                formatted_lines.append((formatted_text, line_level))
+            formatted = self.formatter.format_blockquote(formatted_lines)
             self._write(formatted + '\n')
             self.in_blockquote = False
             self.blockquote_lines = []

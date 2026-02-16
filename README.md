@@ -1,152 +1,139 @@
-# MarkRender 🎨
+# MarkRender
 
-**A professional terminal markdown renderer built for streaming LLM responses.**
+MarkRender is a Python library for rendering Markdown in the terminal. It is designed to be highly customizable and is particularly well-suited for streaming content, such as responses from Large Language Models (LLMs).
 
-MarkRender is a Python library designed to bring beautifully rendered markdown directly to your terminal. It's especially good for displaying streaming output from large language models, ensuring a smooth, flicker-free experience with rich formatting and syntax highlighting.
+## Key Features
 
-## ✨ Features You'll Love
+*   **Streaming Support**: MarkRender can process and render Markdown content as it arrives, providing a smooth and responsive experience for dynamic content.
+*   **Syntax Highlighting**: Code blocks are highlighted using the powerful Pygments library, supporting a wide range of languages.
+*   **Theming**: Choose from a variety of built-in themes to customize the appearance of your rendered output.
+*   **Table Rendering**: Tables are rendered with proper formatting and alignment, powered by the `rich` library.
+*   **Markdown Compatibility**: Supports a wide range of Markdown features, including headings, lists, blockquotes, and more.
+*   **Cross-Platform**: Works on Windows, macOS, and Linux.
 
-* **Streaming Optimized**: Renders markdown chunks as they arrive, perfect for LLM interactions.
-* **Gorgeous Themes**: Comes with several built-in color themes to match your terminal aesthetic.
-* **Smart Syntax Highlighting**: Powered by Pygments, it makes your code blocks pop.
-* **Full Markdown Support**: Handles everything from headings and lists to tables, checkboxes, emojis, and links with robust streaming support.
-* **Cross-Platform**: Works on Windows, macOS, and Linux.
+## Installation
 
-## 🚀 Get Started
-
-### Installation
-
-It's super easy to get MarkRender up and running:
+You can install MarkRender using pip:
 
 ```bash
-pip install git+https://github.com/Praneeth-Gandodi/markrender.git
+pip install markrender
 ```
 
-Or, for development, clone the repository and install in editable mode:
+For development, you can clone the repository and install it in editable mode:
+
 ```bash
 git clone https://github.com/Praneeth-Gandodi/markrender.git
 cd markrender
 pip install -e .
 ```
 
-### Quick Usage
+## Basic Usage
 
-Here's how to render a simple markdown string
+To render a Markdown string, create a `MarkdownRenderer` instance and use its `render` method:
 
 ```python
 from markrender import MarkdownRenderer
 
-renderer = MarkdownRenderer() 
+renderer = MarkdownRenderer()
 
 markdown_text = """
-# Project Title  
-This is a comprehensive markdown example that demonstrates various features.  
-It includes headers, lists, links, images, and code blocks.  
+# Example Document
 
-## Subsection Explanation  
-- **Headers** are defined using `#` symbols.  
-- **Lists** can be ordered or unordered.  
-- **Links** use the syntax: `[text](url)`.  
-- **Images** are added via `![alternative text](path)`.  
+This is a sample Markdown document to demonstrate the capabilities of MarkRender.
 
----
+## Text Formatting
 
-### Installation 
-To get started, run the following command in your terminal:  
-`pip install markrender`
+You can use various text formatting options, such as:
 
-### Feature Comparison
-| Feature | Syntax |
-| :--- | :--- |
-| Bold | **text** |
-| Italic | *text* |
-| Inline Code | `code` |
+- **Bold text**
+- *Italic text*
+- `Inline code`
 
-> **Note:** Ensure your renderer is finalized after use to prevent memory leaks.
+## Code Blocks
+
+```python
+def hello_world():
+    print("Hello, from MarkRender!")
+```
+
+## Tables
+
+| Feature         | Supported |
+| --------------- | :-------: |
+| Streaming       |    Yes    |
+| Syntax Highlighting |    Yes    |
+| Theming         |    Yes    |
+
 """
 
 renderer.render(markdown_text)
 renderer.finalize()
 ```
 
-How to render streaming api responses
+## Streaming Usage
+
+MarkRender is ideal for rendering content that arrives in chunks, such as from an API response. The `render` method can be called multiple times with partial content.
 
 ```python
-from openai import OpenAI
+import time
+from markrender import MarkdownRenderer
 
-renderer = MarkdownRenderer(theme='github-dark', line_numbers=True)
+renderer = MarkdownRenderer()
 
-API_KEY = # Your openai api key
+markdown_stream = [
+    "# Streaming Example\n\n",
+    "This text is being rendered in chunks.\n\n",
+    "```python\n",
+    "for i in range(5):\n",
+    "    print(i)\n",
+    "```\n",
+]
 
-client = OpenAI(api_key=API_KEY)
+for chunk in markdown_stream:
+    renderer.render(chunk)
+    time.sleep(0.5)
 
-stream = client.chat.completions.create(
-    model="openai/gpt-oss-120b",
-    messages=[
-    {
-        "role": "system",
-        "content": "You are a highly capable AI assistant that answers clearly and concisely."
-    },
-    {
-        "role": "user",
-        "content": "Whats the difference between C and C++?"
-    }
-    ],
-    stream=True
-)
-for chunk in stream:
-    data = chunk.choices[0].delta.content
-    if data: 
-        renderer.render(data)
-
-renderer.finalize() 
+renderer.finalize()
 ```
 
-## 🎨 Advanced Configuration
+## Customization
 
-You can customize the renderer's appearance and behavior with the following parameters:
+The `MarkdownRenderer` can be customized with various options:
 
 ```python
 from markrender import MarkdownRenderer
 
 renderer = MarkdownRenderer(
-    theme='monokai',         # Set the color style
-    line_numbers=True,       # Show numbers next to code lines
-    code_background=True,    # Add a background color to code blocks
-    force_color=True,        # Always show colors
-    stream_code=True         # Render code blocks line-by-line
+    theme='monokai',
+    line_numbers=True,
+    code_background=True,
+    force_color=True,
+    stream_code=True
 )
 ```
 
-### Non-Streaming Code Blocks
+**Available Options:**
 
-If you prefer to render code blocks all at once after the entire block has been received, you can set `stream_code=False`. This is useful if you want to avoid seeing incomplete code blocks during streaming.
+*   `theme`: The color theme to use for syntax highlighting.
+*   `line_numbers`: Whether to display line numbers in code blocks.
+*   `code_background`: Whether to add a background color to code blocks.
+*   `force_color`: If `True`, forces color output even if the terminal does not appear to support it.
+*   `stream_code`: If `False`, code blocks are rendered all at once at the end, rather than line by line.
 
-```python
-renderer = MarkdownRenderer(stream_code=False)
-```
+## Available Themes
 
-## Available themes
+*   `github-dark`
+*   `monokai`
+*   `dracula`
+*   `nord`
+*   `one-dark`
+*   `solarized-dark`
+*   `solarized-light`
 
-* github-dark
-* monokai
-* dracula
-* nord
-* one-dark
-* solarized-dark
-* solarized-light
+## Contributing
 
+Contributions are welcome! Please feel free to open an issue or submit a pull request on the [GitHub repository](https://github.com/Praneeth-Gandodi/markrender).
 
----
+## License
 
-## 📊 Table Rendering Excellence
-
-MarkRender provides robust table rendering powered by the `rich` library. Tables are beautifully formatted with proper alignment, borders, and theme-appropriate colors. The renderer handles streaming edge cases gracefully, ensuring tables render correctly even when content arrives in chunks.
-
-## 🤝 Contributing
-
-We welcome contributions! Feel free to open issues or pull requests on our [GitHub repository](https://github.com/Praneeth-Gandodi/markrender).
-
-## 📄 License
-
-MarkRender is released under the MIT License. See the [LICENSE](LICENSE) file for more details.
+MarkRender is distributed under the MIT License. See the `LICENSE` file for more details.

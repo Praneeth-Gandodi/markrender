@@ -214,11 +214,11 @@ class MarkdownFormatter:
     def format_table(self, header, data_rows):
         """
         Format markdown table with borders using rich.
-        
+
         Args:
             header: List of rich.Text or str for table header
             data_rows: List of lists of rich.Text or str representing table data rows
-        
+
         Returns:
             Formatted table string or rich object
         """
@@ -239,7 +239,7 @@ class MarkdownFormatter:
              table_border_style = rich_border_color if rich_border_color else "none"
         else:
              table_border_style = "none"
-             
+
         # table_header is now an ANSI color code, convert to rich style
         header_color_code = self.theme.get('table_header')
         if header_color_code:
@@ -247,16 +247,21 @@ class MarkdownFormatter:
             header_style = f"bold {rich_header_color}" if rich_header_color else "bold magenta"
         else:
             header_style = "bold magenta"
-            
-        table = Table(show_header=True, header_style=header_style, border_style=table_border_style)
+
+        table = Table(show_header=True, header_style=header_style, border_style=table_border_style, padding=(0, 1))
 
         # Add columns
         for col_title in header:
             table.add_column(col_title)
 
-        # Add data rows
-        for row_data in data_rows:
+        # Add data rows with empty rows between for spacing
+        for i, row_data in enumerate(data_rows):
             table.add_row(*row_data)
+            # Add an empty row after each data row except the last one to create spacing
+            if i < len(data_rows) - 1:
+                # Create an empty row with empty cells to add visual spacing
+                empty_row = ["" for _ in range(len(header))]
+                table.add_row(*empty_row)
 
         # Return Group with spacing
         return Group(Text("\n"), table, Text("\n"))
@@ -304,12 +309,12 @@ class MarkdownFormatter:
         stripped_first_line = str(first_line_content).strip()
         
         # Check for callout syntax: [!TYPE] Content
-        callout_match = re.match(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION)\]\s*(.*)', stripped_first_line, re.IGNORECASE)
+        callout_match = re.match(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION|INFO|SUCCESS|QUESTION|FAILURE|BUG|EXAMPLE|QUOTE)\]\s*(.*)', stripped_first_line, re.IGNORECASE)
 
         if callout_match:
             callout_type = callout_match.group(1).upper()
             message_first_line = callout_match.group(2).strip()
-            
+
             callout_colors = {
                 "NOTE": self.theme.get('note_color', Colors.CYAN),
                 "TIP": self.theme.get('tip_color', Colors.GREEN),
@@ -317,9 +322,16 @@ class MarkdownFormatter:
                 "WARNING": self.theme.get('warning_color', Colors.YELLOW),
                 "CAUTION": self.theme.get('caution_color', Colors.RED),
                 "ATTENTION": self.theme.get('attention_color', Colors.RED),
+                "INFO": self.theme.get('info_color', Colors.BLUE),
+                "SUCCESS": self.theme.get('success_color', Colors.GREEN),
+                "QUESTION": self.theme.get('question_color', Colors.CYAN),
+                "FAILURE": self.theme.get('failure_color', Colors.RED),
+                "BUG": self.theme.get('bug_color', Colors.RED),
+                "EXAMPLE": self.theme.get('example_color', Colors.WHITE),
+                "QUOTE": self.theme.get('quote_color', Colors.WHITE),
             }
             type_color = callout_colors.get(callout_type, Colors.WHITE)
-            
+
             # Icon mapping
             callout_icons = {
                 "NOTE": "ℹ️",
@@ -327,7 +339,14 @@ class MarkdownFormatter:
                 "IMPORTANT": "‼",
                 "WARNING": "⚠️",
                 "CAUTION": "🛑",
-                "ATTENTION": "🚨"
+                "ATTENTION": "🚨",
+                "INFO": "📘",
+                "SUCCESS": "✅",
+                "QUESTION": "❓",
+                "FAILURE": "❌",
+                "BUG": "🐛",
+                "EXAMPLE": "📝",
+                "QUOTE": "💬",
             }
             icon = callout_icons.get(callout_type, "")
 
@@ -359,32 +378,44 @@ class MarkdownFormatter:
             for i in range(1, len(lines_data)):
                 line_content, line_level = lines_data[i]
                 current_indent = '  ' * max(0, line_level - 1)
+
+                # line_content may already be a Rich Text object with inline formatting applied
+                if isinstance(line_content, Text):
+                    content_text = line_content
+                else:
+                    content_text = Text.from_markup(line_content.strip()) if isinstance(line_content, str) else Text(str(line_content))
                 
                 line_text = Text.assemble(
                      Text(current_indent),
                      Text("  "),
-                     Text.from_markup(line_content.strip()) if isinstance(line_content, str) else line_content
+                     content_text
                 )
-                line_text.stylize(get_rich_color_style(type_color))
+                # Don't override existing styling - just add color to unstyled portions
+                line_text.stylize(get_rich_color_style(type_color), 0, len(current_indent) + 2)
                 assembled_lines.append(line_text)
-                
+
             return Text.assemble(*assembled_lines, "\n")
 
         # Standard Blockquote Rendering with Nesting Support
         assembled_text = Text()
         border_char = '│'
         border_style = get_rich_color_style(self.theme['blockquote_border'])
-        
+
         for i, (line_str, line_level) in enumerate(lines_data):
             # For each nesting level, add a border char and space
             prefix = Text()
             for _ in range(max(1, line_level)):
                 prefix.append(border_char, style=border_style)
                 prefix.append(" ")
+
+            # line_str may already be a Rich Text object with inline formatting applied
+            if isinstance(line_str, Text):
+                content = line_str
+            else:
+                content = Text.from_markup(line_str) if isinstance(line_str, str) else Text(str(line_str))
             
-            content = Text.from_markup(line_str) if isinstance(line_str, str) else line_str
             assembled_text.append(Text.assemble(prefix, content))
-            
+
             if i < len(lines_data) - 1:
                 assembled_text.append("\n")
                 

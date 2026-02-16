@@ -17,14 +17,22 @@ class MarkdownParser:
     ITALIC_PATTERN = re.compile(r'\*([^\*]+)\*')
     STRIKETHROUGH_PATTERN = re.compile(r'~~([^~]+)~~')
     LINK_PATTERN = re.compile(r'\[([^\]]+)\]\(([^\)]+)\)')
+    # Also support angle bracket links: <url>
+    ANGLE_LINK_PATTERN = re.compile(r'<([a-zA-Z][a-zA-Z0-9+.-]*://[^>]+)>')
     EMOJI_PATTERN = re.compile(r':([a-z0-9_+-]+):')
     CHECKBOX_PATTERN = re.compile(r'^(\s*)-\s+\[([ xX])\]\s+(.+)$', re.MULTILINE)
-    LIST_ITEM_PATTERN = re.compile(r'^(\s*)[-*]\s+(.+)$', re.MULTILINE)
+    LIST_ITEM_PATTERN = re.compile(r'^(\s*)[-*•]\s+(.+)$', re.MULTILINE)
     ORDERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)\.\s+(.+)$', re.MULTILINE)
     BLOCKQUOTE_PATTERN = re.compile(r'^((?:>\s?)+)(.*)$', re.MULTILINE)
-    CALLOUT_PATTERN = re.compile(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION)\]\s*(.*)$', re.IGNORECASE)
+    # Also support box-drawing character │ for blockquotes (common in some markdown styles)
+    BOX_BLOCKQUOTE_PATTERN = re.compile(r'^(\s*[│|](?:\s*[│|])*)\s*(.*)$')
+    CALLOUT_PATTERN = re.compile(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION|INFO|SUCCESS|QUESTION|FAILURE|BUG|EXAMPLE|QUOTE)\]\s*(.*)$', re.IGNORECASE)
     HR_PATTERN = re.compile(r'^(\*\*\*+|---+|___+)\s*$', re.MULTILINE)
     TABLE_ROW_PATTERN = re.compile(r'^\s*\|.*\|\s*$', re.MULTILINE)
+    # LaTeX math patterns (to preserve as raw text)
+    # DOTALL flag allows . to match newlines for multi-line display math
+    LATEX_INLINE_PATTERN = re.compile(r'\\\((.+?)\\\)', re.DOTALL)
+    LATEX_DISPLAY_PATTERN = re.compile(r'\\\[(.+?)\\\]', re.DOTALL)
     
     def __init__(self):
         """Initialize parser state"""
@@ -33,15 +41,17 @@ class MarkdownParser:
         self.code_buffer = []
         self.in_table = False
         self.table_buffer = []
+        self.in_latex_inline = False
+        self.in_latex_display = False
     
     def is_complete_element(self, text):
         """
         Check if text contains a complete markdown element
         or if we need more content
-        
+
         Args:
             text: Text to check
-        
+
         Returns:
             Tuple of (is_complete, element_type)
         """
@@ -50,7 +60,7 @@ class MarkdownParser:
             backtick_count = text.count('```')
             if backtick_count % 2 == 1:
                 return (False, 'code_block')
-        
+
         # Check for incomplete table
         if '|' in text:
             # Check if it looks like a table row but isn't complete
@@ -58,11 +68,17 @@ class MarkdownParser:
             stripped = text.strip()
             if stripped.startswith('|') and not stripped.endswith('|'):
                  return (False, 'table')
-        
+
         # Check for incomplete inline code
         if text.count('`') % 2 == 1:
             return (False, 'inline_code')
-        
+
+        # Check for incomplete LaTeX expressions
+        if text.count('\\(') != text.count('\\)'):
+            return (False, 'latex_inline')
+        if text.count('\\[') != text.count('\\]'):
+            return (False, 'latex_display')
+
         return (True, None)
     
     def parse_heading(self, line):
@@ -182,10 +198,10 @@ class MarkdownParser:
     def parse_blockquote(self, line):
         """
         Parse blockquote from line
-        
+
         Args:
             line: Line to parse
-        
+
         Returns:
             Tuple of (text, nesting_level) or None
         """
@@ -197,7 +213,27 @@ class MarkdownParser:
             nesting_level = markers.count('>')
             return (text, nesting_level)
         return None
-    
+
+    def parse_box_blockquote(self, line):
+        """
+        Parse blockquote using box-drawing character │ or pipe |
+
+        Args:
+            line: Line to parse
+
+        Returns:
+            Tuple of (text, level) or None
+        """
+        match = self.BOX_BLOCKQUOTE_PATTERN.match(line)
+        if match:
+            markers = match.group(1)
+            text = match.group(2)
+            # Count the number of │ or | characters to determine nesting level
+            nesting_level = max(markers.count('│'), markers.count('|'))
+            if text.strip() or nesting_level > 0:
+                return (text, nesting_level)
+        return None
+
     def is_hr(self, line):
         """
         Check if line is a horizontal rule
@@ -214,10 +250,10 @@ class MarkdownParser:
         """
         Check if text contains incomplete inline markdown syntax across chunks.
         This is a heuristic to prevent flushing paragraphs with unclosed inline elements.
-        
+
         Args:
             text: Text to check
-            
+
         Returns:
             True if incomplete, False otherwise
         """
@@ -247,11 +283,21 @@ class MarkdownParser:
              # Only if we have a preceding ']' might this be a link url
              if ']' in text:
                 return True
+        # Check for incomplete LaTeX expressions
+        if text.count('\\(') != text.count('\\)'):
+            return True
+        if text.count('\\[') != text.count('\\]'):
+            return True
+        # Check for incomplete angle bracket links
+        if text.count('<') > text.count('>'):
+            # Could be an incomplete angle link
+            if re.search(r'<[a-zA-Z]', text) and not re.search(r'>', text[text.rfind('<'):]):
+                return True
         return False
     
     def apply_inline_formatting(self, text, formatter):
         """
-        Apply inline formatting (bold, italic, links, emoji, code)
+        Apply inline formatting (code, bold, italic, links, strikethrough, emoji) in the correct order.
         Returns a rich.Text object.
         """
         from rich.text import Text
@@ -259,226 +305,375 @@ class MarkdownParser:
         if not text:
             return Text("")
 
-        # First, apply bold formatting to the entire text
-        bold_segments = split_by_regex(text, self.BOLD_PATTERN)
-        bold_applied_text = Text()
-        
-        for bold_seg in bold_segments:
-            if bold_seg['match']:
-                # This segment is bold: **content**
-                bold_content = bold_seg['match'].group(1)
-                # Process inner formatting within the bold content
-                inner_formatted = self._apply_inner_formatting(bold_content, formatter)
-                # Apply bold style to the entire inner content
-                bold_text = formatter.format_bold("")
-                inner_formatted.stylize(bold_text.style)
-                bold_applied_text.append(inner_formatted)
-            else:
-                # Non-bold segment, process other formatting
-                inner_formatted = self._apply_inner_formatting(bold_seg['text'], formatter)
-                bold_applied_text.append(inner_formatted)
-        
-        return bold_applied_text
-    
-    def _apply_inner_formatting(self, text, formatter):
-        """
-        Apply inner formatting (code, italic, links, emoji) to text that may already have outer formatting
-        """
-        from rich.text import Text
-        
-        # Handle inline code
-        code_segments = split_by_regex(text, self.INLINE_CODE_PATTERN)
-        final_text = Text()
-        
-        for code_seg in code_segments:
-            if code_seg['match']:
-                # This is inline code: `content`
-                code_content = code_seg['match'].group(1)
-                final_text.append(formatter.format_inline_code(code_content))
-            else:
-                # Non-code segment, process other formatting
-                remaining_text = code_seg['text']
-                
-                # Handle italic
-                italic_segments = split_by_regex(remaining_text, self.ITALIC_PATTERN)
-                italic_applied_text = Text()
-                
-                for italic_seg in italic_segments:
-                    if italic_seg['match']:
-                        # This segment is italic: *content*
-                        italic_content = italic_seg['match'].group(1)
-                        # Process any remaining formatting within italic content
-                        inner_formatted = self._process_remaining_formatting(italic_content, formatter)
-                        # Apply italic style
-                        italic_text = formatter.format_italic("")
-                        inner_formatted.stylize(italic_text.style)
-                        italic_applied_text.append(inner_formatted)
-                    else:
-                        # Non-italic segment
-                        inner_formatted = self._process_remaining_formatting(italic_seg['text'], formatter)
-                        italic_applied_text.append(inner_formatted)
-                
-                final_text.append(italic_applied_text)
-        
-        return final_text
-    
-    def _process_remaining_formatting(self, text, formatter):
-        """
-        Process links, strikethrough, emoji in that order.
-        """
-        from rich.text import Text
+        # Replace HTML line breaks with actual newlines before processing
+        text = text.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
 
-        # Handle Links
-        segments = split_by_regex(text, self.LINK_PATTERN)
+        # Process formatting in order of specificity to avoid conflicts:
+        # 1. Inline code (most specific - avoid processing formatting inside code)
+        # 2. LaTeX math (preserve as-is, add line breaks for display math)
+        # 3. Links (including angle bracket links)
+        # 4. Bold/Italic/Strikethrough
+        # 5. Emoji
+
+        # First, handle LaTeX expressions and angle links by replacing them with placeholders
+        latex_parts = []
+        angle_link_parts = []
+        latex_placeholder = '\x00LATEXPLACEHOLDER{}\x00'
+        angle_link_placeholder = '\x00ANGLELINKPLACEHOLDER{}\x00'
+
+        def save_latex(match):
+            latex_parts.append(('inline', match.group(0)))
+            return latex_placeholder.format(len(latex_parts) - 1)
+
+        def save_display_latex(match):
+            latex_parts.append(('display', match.group(0)))
+            return latex_placeholder.format(len(latex_parts) - 1)
+
+        def save_angle_link(match):
+            angle_link_parts.append(match.group(1))  # Save just the URL
+            return angle_link_placeholder.format(len(angle_link_parts) - 1)
+
+        # Save display math first (more specific)
+        text = self.LATEX_DISPLAY_PATTERN.sub(save_display_latex, text)
+        # Then save inline math
+        text = self.LATEX_INLINE_PATTERN.sub(save_latex, text)
+        # Save angle bracket links
+        text = self.ANGLE_LINK_PATTERN.sub(save_angle_link, text)
+
+        # First, handle inline code separately to avoid processing formatting inside code
+        code_parts = self._split_by_inline_code(text)
+
         result = Text()
+        for i, part in enumerate(code_parts):
+            if i % 2 == 1:  # This is a code part (odd indices are code, even are non-code)
+                result.append(formatter.format_inline_code(part))
+            else:  # This is a non-code part
+                # Process other formatting in this non-code part
+                formatted_part = self._apply_non_code_formatting(part, formatter)
+                result.append(formatted_part)
 
-        for segment in segments:
+        # Now restore LaTeX expressions and angle links while preserving styling
+        # We need to rebuild the text with placeholders replaced
+        result_text = result.plain
+        
+        # Find all placeholder positions and their lengths
+        replacements = []  # List of (start, end, replacement_text)
+        
+        for i, (latex_type, latex) in enumerate(latex_parts):
+            placeholder = latex_placeholder.format(i)
+            start = result_text.find(placeholder)
+            if start != -1:
+                # Add line breaks around display math
+                if latex_type == 'display':
+                    replacement = '\n' + latex + '\n'
+                else:
+                    replacement = latex
+                replacements.append((start, start + len(placeholder), replacement))
+        
+        for i, url in enumerate(angle_link_parts):
+            placeholder = angle_link_placeholder.format(i)
+            start = result_text.find(placeholder)
+            if start != -1:
+                replacements.append((start, start + len(placeholder), url))
+        
+        # Sort replacements by position (in reverse order to replace from end to start)
+        replacements.sort(key=lambda x: x[0], reverse=True)
+        
+        # Apply replacements to the text
+        for start, end, replacement in replacements:
+            result_text = result_text[:start] + replacement + result_text[end:]
+        
+        # Create new Text object and re-apply styles from original spans
+        final_result = Text(result_text)
+        
+        # Copy spans from original result, adjusting positions
+        for span in result.spans:
+            # Adjust span positions based on replacements
+            new_start = span.start
+            new_end = span.end
+            
+            # Calculate position adjustments
+            for orig_start, orig_end, replacement in replacements:
+                placeholder_len = orig_end - orig_start
+                replacement_len = len(replacement)
+                diff = replacement_len - placeholder_len
+                
+                if orig_start < new_start:
+                    new_start += diff
+                if orig_start < new_end:
+                    new_end += diff
+            
+            # Only add span if it's valid
+            if new_start < new_end and new_start >= 0 and new_end <= len(result_text):
+                final_result.stylize(span.style, new_start, new_end)
+        
+        return final_result
+    
+    def _split_by_inline_code(self, text):
+        """
+        Split text by inline code markers, alternating between non-code and code parts.
+        Returns a list where even indices are non-code parts and odd indices are code parts.
+        """
+        import re
+        # Find all inline code sections
+        parts = []
+        last_end = 0
+        
+        for match in self.INLINE_CODE_PATTERN.finditer(text):
+            start, end = match.span()
+            
+            # Add the non-code part before this match
+            if start > last_end:
+                parts.append(text[last_end:start])
+            
+            # Add the code content (without the backticks)
+            code_content = match.group(1)
+            parts.append(code_content)
+            
+            last_end = end
+        
+        # Add the remaining non-code part
+        if last_end < len(text):
+            parts.append(text[last_end:])
+        
+        return parts
+    
+    def _apply_non_code_formatting(self, text, formatter):
+        """
+        Apply non-code inline formatting (links, bold, italic, strikethrough, emoji) to text.
+        """
+        from rich.text import Text
+        
+        if not text:
+            return Text("")
+        
+        # Process links first using the split_by_regex utility
+        link_segments = split_by_regex(text, self.LINK_PATTERN)
+        
+        result = Text()
+        for segment in link_segments:
             content = segment['text']
             if segment['match']:
                 # It's a link: [text](url)
                 link_text = segment['match'].group(1)
                 link_url = segment['match'].group(2)
 
-                # Recursively process the link text
-                styled_link_text = self._process_remaining_formatting(link_text, formatter)
+                # Apply other formatting to the link text
+                formatted_link_text = self._apply_other_formatting(link_text, formatter)
 
                 # Apply link style
                 formatted_link = formatter.format_link(link_text, link_url)
                 link_style = formatted_link.style
 
-                styled_link_text.stylize(link_style)
-                result.append(styled_link_text)
+                formatted_link_text.stylize(link_style)
+                result.append(formatted_link_text)
             else:
                 # Not a link, process other formatting
-                result.append(self._process_strikethrough_emoji(content, formatter))
+                result.append(self._apply_other_formatting(content, formatter))
         return result
     
-    def _process_strikethrough_emoji(self, text, formatter):
+    def _apply_other_formatting(self, text, formatter):
         """
-        Process strikethrough and emoji.
+        Apply other formatting (bold, italic, strikethrough, emoji) to text.
         """
         from rich.text import Text
         
-        # Handle Strikethrough
-        segments = split_by_regex(text, self.STRIKETHROUGH_PATTERN)
-        result = Text()
+        if not text:
+            return Text("")
         
-        for segment in segments:
-            content = segment['text']
-            if segment['match']:
-                # It's strikethrough: ~~content~~
-                strike_content = segment['match'].group(1)
-                styled_strike_text = self._process_emoji_only(strike_content, formatter)
-                styled_strike_text.stylize(formatter.format_strikethrough("").style)
-                result.append(styled_strike_text)
-            else:
-                # Not strikethrough
-                result.append(self._process_emoji_only(content, formatter))
+        # Apply formatting in order of complexity
+        # First, handle bold
+        bold_parts = self._split_by_bold(text)
+        
+        result = Text()
+        for i, part in enumerate(bold_parts):
+            if i % 2 == 1:  # This is a bold part
+                formatted_part = self._apply_non_bold_formatting(part, formatter)
+                bold_style = formatter.format_bold("").style
+                formatted_part.stylize(bold_style)
+                result.append(formatted_part)
+            else:  # This is a non-bold part
+                result.append(self._apply_non_bold_formatting(part, formatter))
+        
         return result
     
-    def _process_emoji_only(self, text, formatter):
+    def _split_by_bold(self, text):
         """
-        Process only emoji.
+        Split text by bold markers, alternating between non-bold and bold parts.
+        """
+        import re
+        parts = []
+        last_end = 0
+        
+        for match in self.BOLD_PATTERN.finditer(text):
+            start, end = match.span()
+            
+            # Add the non-bold part before this match
+            if start > last_end:
+                parts.append(text[last_end:start])
+            
+            # Add the bold content (without the **)
+            bold_content = match.group(1)
+            parts.append(bold_content)
+            
+            last_end = end
+        
+        # Add the remaining non-bold part
+        if last_end < len(text):
+            parts.append(text[last_end:])
+        
+        return parts
+    
+    def _apply_non_bold_formatting(self, text, formatter):
+        """
+        Apply non-bold formatting (italic, strikethrough, emoji) to text.
         """
         from rich.text import Text
         
-        # Handle Emoji
-        segments = split_by_regex(text, self.EMOJI_PATTERN)
-        result = Text()
+        if not text:
+            return Text("")
         
-        for segment in segments:
-            content = segment['text']
-            if segment['match']:
-                # It's an emoji: :emoji:
-                emoji_code = segment['match'].group(1)
-                result.append(formatter.format_emoji(emoji_code))
-            else:
-                # Plain text
-                result.append(Text(content))
+        # Handle italic
+        italic_parts = self._split_by_italic(text)
+        
+        result = Text()
+        for i, part in enumerate(italic_parts):
+            if i % 2 == 1:  # This is an italic part
+                formatted_part = self._apply_non_italic_formatting(part, formatter)
+                italic_style = formatter.format_italic("").style
+                formatted_part.stylize(italic_style)
+                result.append(formatted_part)
+            else:  # This is a non-italic part
+                result.append(self._apply_non_italic_formatting(part, formatter))
+        
         return result
     
-    def _process_links_and_styles(self, text, formatter):
+    def _split_by_italic(self, text):
         """
-        Process links, bold, italic, strikethrough, emoji in that order.
+        Split text by italic markers, alternating between non-italic and italic parts.
+        """
+        import re
+        parts = []
+        last_end = 0
+        
+        for match in self.ITALIC_PATTERN.finditer(text):
+            start, end = match.span()
+            
+            # Add the non-italic part before this match
+            if start > last_end:
+                parts.append(text[last_end:start])
+            
+            # Add the italic content (without the *)
+            italic_content = match.group(1)
+            parts.append(italic_content)
+            
+            last_end = end
+        
+        # Add the remaining non-italic part
+        if last_end < len(text):
+            parts.append(text[last_end:])
+        
+        return parts
+    
+    def _apply_non_italic_formatting(self, text, formatter):
+        """
+        Apply non-italic formatting (strikethrough, emoji) to text.
         """
         from rich.text import Text
         
-        # 2. Handle Links
-        segments = split_by_regex(text, self.LINK_PATTERN)
-        result = Text()
+        if not text:
+            return Text("")
         
-        for segment in segments:
-            content = segment['text']
-            if segment['match']:
-                # It's a link: [text](url)
-                link_text = segment['match'].group(1)
-                link_url = segment['match'].group(2)
-                
-                # Recursively process the link text
-                styled_link_text = self._process_styles_only(link_text, formatter)
-                
-                # Apply link style
-                formatted_link = formatter.format_link(link_text, link_url)
-                link_style = formatted_link.style
-                
-                styled_link_text.stylize(link_style)
-                result.append(styled_link_text)
-            else:
-                # Not a link
-                result.append(self._process_styles_only(content, formatter))
-        return result
-
-    def _process_styles_only(self, text, formatter):
-        """
-        Process bold, italic, strike, emoji.
-        """
-        # Bold
-        segments = split_by_regex(text, self.BOLD_PATTERN)
-        result_bold = self._process_segments(segments, formatter.format_bold, self._process_italic, formatter)
-        return result_bold
-
-    def _process_italic(self, text, formatter):
-        segments = split_by_regex(text, self.ITALIC_PATTERN)
-        return self._process_segments(segments, formatter.format_italic, self._process_strike, formatter)
-
-    def _process_strike(self, text, formatter):
-        segments = split_by_regex(text, self.STRIKETHROUGH_PATTERN)
-        return self._process_segments(segments, formatter.format_strikethrough, self._process_emoji, formatter)
-
-    def _process_emoji(self, text, formatter):
-        segments = split_by_regex(text, self.EMOJI_PATTERN)
-        from rich.text import Text
+        # Handle strikethrough
+        strike_parts = self._split_by_strikethrough(text)
+        
         result = Text()
-        for segment in segments:
-            if segment['match']:
-                emoji_code = segment['match'].group(1)
-                result.append(formatter.format_emoji(emoji_code))
-            else:
-                result.append(self._process_plain(segment['text'], formatter))
+        for i, part in enumerate(strike_parts):
+            if i % 2 == 1:  # This is a strikethrough part
+                formatted_part = self._apply_non_strike_formatting(part, formatter)
+                strike_style = formatter.format_strikethrough("").style
+                formatted_part.stylize(strike_style)
+                result.append(formatted_part)
+            else:  # This is a non-strikethrough part
+                result.append(self._apply_non_strike_formatting(part, formatter))
+        
         return result
-
-    def _process_plain(self, text, formatter):
+    
+    def _split_by_strikethrough(self, text):
+        """
+        Split text by strikethrough markers, alternating between non-strike and strike parts.
+        """
+        import re
+        parts = []
+        last_end = 0
+        
+        for match in self.STRIKETHROUGH_PATTERN.finditer(text):
+            start, end = match.span()
+            
+            # Add the non-strikethrough part before this match
+            if start > last_end:
+                parts.append(text[last_end:start])
+            
+            # Add the strikethrough content (without the ~~)
+            strike_content = match.group(1)
+            parts.append(strike_content)
+            
+            last_end = end
+        
+        # Add the remaining non-strikethrough part
+        if last_end < len(text):
+            parts.append(text[last_end:])
+        
+        return parts
+    
+    def _apply_non_strike_formatting(self, text, formatter):
+        """
+        Apply non-strikethrough formatting (emoji) to text.
+        """
         from rich.text import Text
-        return Text(text)
-
-    def _process_segments(self, segments, format_func, next_stage_func, formatter):
-        from rich.text import Text
+        
+        if not text:
+            return Text("")
+        
+        # Handle emoji
+        emoji_parts = self._split_by_emoji(text)
+        
         result = Text()
-        for segment in segments:
-            content = segment['text']
-            if segment['match']:
-                inner = segment['match'].group(1)
-                inner_processed = next_stage_func(inner, formatter)
-                
-                # Get style from format func
-                example = format_func("dummy")
-                style_to_apply = example.style
-                
-                inner_processed.stylize(style_to_apply)
-                result.append(inner_processed)
-            else:
-                result.append(next_stage_func(content, formatter))
+        for i, part in enumerate(emoji_parts):
+            if i % 2 == 1:  # This is an emoji part
+                result.append(formatter.format_emoji(part))
+            else:  # This is a non-emoji part
+                result.append(Text(part))
+        
         return result
+    
+    def _split_by_emoji(self, text):
+        """
+        Split text by emoji markers, alternating between non-emoji and emoji parts.
+        """
+        import re
+        parts = []
+        last_end = 0
+        
+        for match in self.EMOJI_PATTERN.finditer(text):
+            start, end = match.span()
+            
+            # Add the non-emoji part before this match
+            if start > last_end:
+                parts.append(text[last_end:start])
+            
+            # Add the emoji code (without the colons)
+            emoji_code = match.group(1)
+            parts.append(emoji_code)
+            
+            last_end = end
+        
+        # Add the remaining non-emoji part
+        if last_end < len(text):
+            parts.append(text[last_end:])
+        
+        return parts
+    
 
 def split_by_regex(text, pattern):
     """
