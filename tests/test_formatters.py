@@ -79,8 +79,11 @@ class TestMarkdownFormatter:
     
     def test_format_blockquote(self):
         """Test blockquote formatting"""
-        result = self.formatter.format_blockquote([("Quote text", 1)])
-        assert "Quote text" in result
+        result = self.formatter.format_blockquote([("Regular quote text", 1)])
+        # Check that the text is present in the plain output
+        assert "Regular quote text" in result.plain
+        # Check that styling is applied (borders)
+        assert len(result.spans) > 0
     
     def test_format_link(self):
         """Test link formatting"""

@@ -19,10 +19,10 @@ class TestMermaidDiagrams:
         renderer.finalize()
         
         result = output.getvalue()
-        assert "Mermaid Diagram" in result
+        # Check for box drawing characters
+        assert "┌" in result or "│" in result
         assert "Start" in result
-        # The parser extracts nodes, End should be there
-        assert "End" in result or "B" in result
+        assert "End" in result
 
     def test_mermaid_flowchart(self):
         """Test Mermaid flowchart"""
@@ -39,7 +39,8 @@ graph LR
         renderer.finalize()
         
         result = output.getvalue()
-        assert "Mermaid Diagram" in result
+        # Check for box drawing characters
+        assert "┌" in result or "│" in result
         assert "Client" in result
         # Check that multiple nodes are rendered
         assert "Server" in result or "Database" in result
@@ -58,10 +59,11 @@ graph TD
         renderer.finalize()
         
         result = output.getvalue()
-        assert "Mermaid Diagram" in result
+        # Check for box drawing characters
+        assert "┌" in result or "│" in result
         assert "Top" in result
         # Check that the second node is rendered
-        assert "Bottom" in result or "B" in result
+        assert "Bottom" in result
 
 
 class TestEnhancedLinks:
@@ -186,7 +188,8 @@ And ==highlighted text==.
         renderer.finalize()
         
         result = output.getvalue()
-        assert "Mermaid Diagram" in result
+        # Check for box drawing characters from mermaid
+        assert "┌" in result or "│" in result
         assert "Start" in result
         assert "End" in result
         assert "highlighted" in result

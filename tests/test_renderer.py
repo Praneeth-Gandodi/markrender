@@ -251,16 +251,17 @@ class TestMarkdownRenderer:
         """Test rendering a blockquote that is a note"""
         output = StringIO()
         renderer = MarkdownRenderer(output=output)
-        
+
         renderer.render("> [!NOTE] This is a note.\n")
         renderer.finalize()
-        
+
         result_with_ansi = output.getvalue()
         result = strip_ansi(result_with_ansi)
-        assert "NOTE: This is a note." in result
-
-        # Check that it doesn't have the blockquote border
-        assert "│" not in result_with_ansi
+        # Check that it has the callout box format
+        assert "NOTE" in result
+        assert "This is a note" in result
+        # Check that it has box characters (not the old emoji format)
+        assert "│" in result_with_ansi or "┌" in result_with_ansi
 
     def test_render_regular_blockquote(self):
         """Test rendering a regular blockquote"""

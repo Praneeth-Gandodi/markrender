@@ -38,13 +38,19 @@ class MarkdownParser:
     BLOCKQUOTE_PATTERN = re.compile(r'^((?:>\s?)+)(.*)$', re.MULTILINE)
     # Also support box-drawing character │ for blockquotes (common in some markdown styles)
     BOX_BLOCKQUOTE_PATTERN = re.compile(r'^(\s*[│|](?:\s*[│|])*)\s*(.*)$')
+    # GitHub-style callouts: [!TYPE] or > [!TYPE]
     CALLOUT_PATTERN = re.compile(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION|INFO|SUCCESS|QUESTION|FAILURE|BUG|EXAMPLE|QUOTE)\]\s*(.*)$', re.IGNORECASE)
+    # Also support callouts without brackets: > NOTE: or > [NOTE] - must have colon or be in brackets
+    CALLOUT_ALT_PATTERN = re.compile(r'^\[(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION|INFO|SUCCESS|QUESTION|FAILURE|BUG|EXAMPLE|QUOTE)\]\s*[:\-]?\s*(.*)$', re.IGNORECASE)
     HR_PATTERN = re.compile(r'^(\*\*\*+|---+|___+)\s*$', re.MULTILINE)
     TABLE_ROW_PATTERN = re.compile(r'^\s*\|.*\|\s*$', re.MULTILINE)
     # LaTeX math patterns (to preserve as raw text)
     # DOTALL flag allows . to match newlines for multi-line display math
     LATEX_INLINE_PATTERN = re.compile(r'\\\((.+?)\\\)', re.DOTALL)
     LATEX_DISPLAY_PATTERN = re.compile(r'\\\[(.+?)\\\]', re.DOTALL)
+    # Also support single $ for inline math (but not double $$ which is display)
+    LATEX_DOLLAR_INLINE_PATTERN = re.compile(r'\$([^\$]+?)\$')
+    LATEX_DISPLAY_DOLLAR_PATTERN = re.compile(r'\$\$(.+?)\$\$', re.DOTALL)
     
     def __init__(self):
         """Initialize parser state"""
@@ -468,8 +474,10 @@ class MarkdownParser:
 
         # Save display math first (more specific)
         text = self.LATEX_DISPLAY_PATTERN.sub(save_display_latex, text)
+        text = self.LATEX_DISPLAY_DOLLAR_PATTERN.sub(save_display_latex, text)
         # Then save inline math
         text = self.LATEX_INLINE_PATTERN.sub(save_latex, text)
+        text = self.LATEX_DOLLAR_INLINE_PATTERN.sub(save_latex, text)
         # Save angle bracket links
         text = self.ANGLE_LINK_PATTERN.sub(save_angle_link, text)
         # Save images
@@ -529,6 +537,17 @@ class MarkdownParser:
                 footnote_num = i + 1
                 footnote_display = formatter.format_footnote_ref(footnote_id, footnote_num)
                 replacements.append((start, start + len(placeholder), footnote_display.plain))
+
+        for i, (latex_type, latex) in enumerate(latex_parts):
+            placeholder = latex_placeholder.format(i)
+            start = result_text.find(placeholder)
+            if start != -1:
+                # Render LaTeX as formatted math
+                if latex_type == 'display':
+                    math_display = formatter.format_latex(latex, display=True)
+                else:
+                    math_display = formatter.format_latex(latex, display=False)
+                replacements.append((start, start + len(placeholder), math_display))
 
         # Sort replacements by position (in reverse order to replace from end to start)
         replacements.sort(key=lambda x: x[0], reverse=True)

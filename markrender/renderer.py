@@ -581,12 +581,30 @@ class MarkdownRenderer:
         self.finalizing = False
     
     def _write(self, text):
-        """Write text to output"""
+        """Write text to output with robust Unicode handling"""
         # Always use rich console to print, so markup is rendered
         if self.formatter.console:
-            # Print directly to the console which handles the output
-            self.formatter.console.print(text, end='')
+            try:
+                # Print directly to the console which handles the output
+                # Handle potential Unicode errors gracefully
+                if isinstance(text, str):
+                    # Ensure UTF-8 safe encoding
+                    text = text.encode('utf-8', errors='replace').decode('utf-8')
+                self.formatter.console.print(text, end='')
+            except Exception as e:
+                # Fallback: try to print without formatting
+                try:
+                    self.output.write(str(text))
+                except Exception:
+                    # Last resort: skip problematic content
+                    pass
         else:
             # Fallback if rich is not available
-            self.output.write(str(text))
+            try:
+                if isinstance(text, str):
+                    text = text.encode('utf-8', errors='replace').decode('utf-8')
+                self.output.write(str(text))
+            except Exception:
+                # Skip problematic content
+                pass
         self.output.flush()

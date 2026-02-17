@@ -352,7 +352,7 @@ class MarkdownFormatter:
     
     def format_blockquote(self, lines_data: list[tuple[str, int]]) -> Text:
         """
-        Format blockquote with border
+        Format blockquote with border or callout box.
         """
         if not lines_data:
             return Text("")
@@ -361,72 +361,59 @@ class MarkdownFormatter:
         first_line_content, base_nesting_level = lines_data[0]
         # Ensure it's string for regex
         stripped_first_line = str(first_line_content).strip()
-        
-        # Check for callout syntax: [!TYPE] Content
-        callout_match = re.match(r'^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION|INFO|SUCCESS|QUESTION|FAILURE|BUG|EXAMPLE|QUOTE)\]\s*(.*)', stripped_first_line, re.IGNORECASE)
+
+        # Check for callout syntax: [!TYPE] Content or NOTE: content
+        callout_match = re.match(r'^\[?(NOTE|TIP|IMPORTANT|WARNING|CAUTION|ATTENTION|INFO|SUCCESS|QUESTION|FAILURE|BUG|EXAMPLE|QUOTE)\]?\s*[:\-]?\s*(.*)', stripped_first_line, re.IGNORECASE)
 
         if callout_match:
             callout_type = callout_match.group(1).upper()
             message_first_line = callout_match.group(2).strip()
 
+            # Callout colors - professional color scheme
             callout_colors = {
-                "NOTE": self.theme.get('note_color', Colors.CYAN),
-                "TIP": self.theme.get('tip_color', Colors.GREEN),
-                "IMPORTANT": self.theme.get('important_color', Colors.MAGENTA),
-                "WARNING": self.theme.get('warning_color', Colors.YELLOW),
-                "CAUTION": self.theme.get('caution_color', Colors.RED),
-                "ATTENTION": self.theme.get('attention_color', Colors.RED),
-                "INFO": self.theme.get('info_color', Colors.BLUE),
-                "SUCCESS": self.theme.get('success_color', Colors.GREEN),
-                "QUESTION": self.theme.get('question_color', Colors.CYAN),
-                "FAILURE": self.theme.get('failure_color', Colors.RED),
-                "BUG": self.theme.get('bug_color', Colors.RED),
-                "EXAMPLE": self.theme.get('example_color', Colors.WHITE),
-                "QUOTE": self.theme.get('quote_color', Colors.WHITE),
+                "NOTE": rgb(59, 130, 246),       # Blue
+                "TIP": rgb(34, 197, 94),         # Green
+                "IMPORTANT": rgb(168, 85, 247),  # Purple
+                "WARNING": rgb(251, 191, 36),    # Yellow
+                "CAUTION": rgb(239, 68, 68),     # Red
+                "ATTENTION": rgb(239, 68, 68),   # Red
+                "INFO": rgb(59, 130, 246),       # Blue
+                "SUCCESS": rgb(34, 197, 94),     # Green
+                "QUESTION": rgb(59, 130, 246),   # Blue
+                "FAILURE": rgb(239, 68, 68),     # Red
+                "BUG": rgb(239, 68, 68),         # Red
+                "EXAMPLE": rgb(107, 114, 128),   # Gray
+                "QUOTE": rgb(107, 114, 128),     # Gray
             }
-            type_color = callout_colors.get(callout_type, Colors.WHITE)
+            type_color = callout_colors.get(callout_type, rgb(107, 114, 128))
 
-            # Icon mapping
-            callout_icons = {
-                "NOTE": "ℹ️",
-                "TIP": "💡",
-                "IMPORTANT": "‼",
-                "WARNING": "⚠️",
-                "CAUTION": "🛑",
-                "ATTENTION": "🚨",
-                "INFO": "📘",
-                "SUCCESS": "✅",
-                "QUESTION": "❓",
-                "FAILURE": "❌",
-                "BUG": "🐛",
-                "EXAMPLE": "📝",
-                "QUOTE": "💬",
-            }
-            icon = callout_icons.get(callout_type, "")
+            # Title case for display
+            type_display = callout_type.capitalize()
 
-            # Format the callout header
-            header_text = Text.assemble(
-                Text(f"{icon} {callout_type}", style=get_rich_color_style(Colors.BOLD + type_color)),
-                ": " if message_first_line else ""
-            )
-            
+            # Format the callout header with colored bar
             assembled_lines = []
-            
+
             # Indentation for the block itself
             indent_str = '  ' * max(0, base_nesting_level - 1)
-            
-            # First line
-            first_line_text = Text.assemble(
-                Text(indent_str), 
-                header_text, 
-                Text.from_markup(message_first_line) if isinstance(message_first_line, str) else message_first_line
+
+            # Top border with color
+            header_bar = Text.assemble(
+                Text(indent_str),
+                Text("┌", style=get_rich_color_style(type_color)),
+                Text("─" * 6, style=get_rich_color_style(type_color)),
+                Text(f" {type_display} ", style=get_rich_color_style(type_color) + " bold"),
+                Text("─" * 40, style=get_rich_color_style(type_color)),
+                Text("┐", style=get_rich_color_style(type_color)),
             )
-            # Apply color to the user's text as well (?) or just the bar?
-            # Let's style the whole line
-            # first_line_text.stylize(get_rich_color_style(type_color))
-            # But header already has style.
-            # Rich styling merges.
-            assembled_lines.append(first_line_text)
+            assembled_lines.append(header_bar)
+
+            # First line content
+            if message_first_line:
+                first_line_text = Text.assemble(
+                    Text(indent_str + "│  "),
+                    Text.from_markup(message_first_line) if isinstance(message_first_line, str) else Text(str(message_first_line))
+                )
+                assembled_lines.append(first_line_text)
 
             # Subsequent lines
             for i in range(1, len(lines_data)):
@@ -438,15 +425,22 @@ class MarkdownFormatter:
                     content_text = line_content
                 else:
                     content_text = Text.from_markup(line_content.strip()) if isinstance(line_content, str) else Text(str(line_content))
-                
+
                 line_text = Text.assemble(
-                     Text(current_indent),
-                     Text("  "),
-                     content_text
+                    Text(current_indent),
+                    Text("│  "),
+                    content_text
                 )
-                # Don't override existing styling - just add color to unstyled portions
-                line_text.stylize(get_rich_color_style(type_color), 0, len(current_indent) + 2)
                 assembled_lines.append(line_text)
+
+            # Bottom border
+            footer_bar = Text.assemble(
+                Text(indent_str),
+                Text("└", style=get_rich_color_style(type_color)),
+                Text("─" * (56 + len(type_display)), style=get_rich_color_style(type_color)),
+                Text("┘", style=get_rich_color_style(type_color)),
+            )
+            assembled_lines.append(footer_bar)
 
             return Text.assemble(*assembled_lines, "\n")
 
@@ -467,12 +461,12 @@ class MarkdownFormatter:
                 content = line_str
             else:
                 content = Text.from_markup(line_str) if isinstance(line_str, str) else Text(str(line_str))
-            
+
             assembled_text.append(Text.assemble(prefix, content))
 
             if i < len(lines_data) - 1:
                 assembled_text.append("\n")
-                
+
         return assembled_text
     
     def format_link(self, text: str, url: str) -> Text:
@@ -521,15 +515,34 @@ class MarkdownFormatter:
     
     def format_emoji(self, emoji_code: str) -> Text:
         """
-        Convert emoji code to emoji character, with fallback.
+        Convert emoji code to emoji character, with robust fallback.
+        
+        Args:
+            emoji_code: Emoji code without colons (e.g., 'wave' for :wave:)
+            
+        Returns:
+            Text object with emoji or fallback
         """
         if emoji_lib:
             try:
+                # Try with alias first
                 char = emoji_lib.emojize(f':{emoji_code}:', language='alias')
-                return Text(char)
+                # Check if it actually returned an emoji (not the original code)
+                if char != f':{emoji_code}:':
+                    return Text(char)
             except Exception:
                 pass
-        return Text(f":{emoji_code}:", style=get_rich_color_style(Colors.YELLOW))
+            
+            # Try with full emoji name
+            try:
+                char = emoji_lib.emojize(f':{emoji_code}:')
+                if char != f':{emoji_code}:':
+                    return Text(char)
+            except Exception:
+                pass
+        
+        # Fallback: return the code in a nice format
+        return Text(f':{emoji_code}:', style=get_rich_color_style(Colors.YELLOW))
 
     def format_image(self, alt_text: str, url: str) -> str:
         """
@@ -609,6 +622,89 @@ class MarkdownFormatter:
         
         return result
 
+    def format_latex(self, latex: str, display: bool = False) -> str:
+        """
+        Format LaTeX math expression as Unicode/ASCII representation.
+        
+        Args:
+            latex: LaTeX math expression
+            display: Whether this is display math (centered, on its own line)
+            
+        Returns:
+            Formatted math string
+        """
+        # Clean up the LaTeX
+        latex = latex.strip()
+        
+        # Simple substitutions for common math symbols
+        substitutions = {
+            r'\\alpha': 'α', r'\\beta': 'β', r'\\gamma': 'γ', r'\\delta': 'δ',
+            r'\\epsilon': 'ε', r'\\zeta': 'ζ', r'\\eta': 'η', r'\\theta': 'θ',
+            r'\\iota': 'ι', r'\\kappa': 'κ', r'\\lambda': 'λ', r'\\mu': 'μ',
+            r'\\nu': 'ν', r'\\xi': 'ξ', r'\\pi': 'π', r'\\rho': 'ρ',
+            r'\\sigma': 'σ', r'\\tau': 'τ', r'\\upsilon': 'υ', r'\\phi': 'φ',
+            r'\\chi': 'χ', r'\\psi': 'ψ', r'\\omega': 'ω',
+            r'\\Alpha': 'Α', r'\\Beta': 'Β', r'\\Gamma': 'Γ', r'\\Delta': 'Δ',
+            r'\\Epsilon': 'Ε', r'\\Zeta': 'Ζ', r'\\Eta': 'Η', r'\\Theta': 'Θ',
+            r'\\Iota': 'Ι', r'\\Kappa': 'Κ', r'\\Lambda': 'Λ', r'\\Mu': 'Μ',
+            r'\\Nu': 'Ν', r'\\Xi': 'Ξ', r'\\Pi': 'Π', r'\\Rho': 'Ρ',
+            r'\\Sigma': 'Σ', r'\\Tau': 'Τ', r'\\Upsilon': 'Υ', r'\\Phi': 'Φ',
+            r'\\Chi': 'Χ', r'\\Psi': 'Ψ', r'\\Omega': 'Ω',
+            r'\\infty': '∞', r'\\partial': '∂', r'\\nabla': '∇', r'\\sqrt': '√',
+            r'\\int': '∫', r'\\sum': '∑', r'\\prod': '∏', r'\\cdot': '·',
+            r'\\times': '×', r'\\div': '÷', r'\\pm': '±', r'\\leq': '≤',
+            r'\\geq': '≥', r'\\neq': '≠', r'\\approx': '≈', r'\\equiv': '≡',
+            r'\\in': '∈', r'\\notin': '∉', r'\\subset': '⊂', r'\\supset': '⊃',
+            r'\\cup': '∪', r'\\cap': '∩', r'\\emptyset': '∅', r'\\forall': '∀',
+            r'\\exists': '∃', r'\\neg': '¬', r'\\wedge': '∧', r'\\vee': '∨',
+            r'\\rightarrow': '→', r'\\leftarrow': '←', r'\\Rightarrow': '⇒',
+            r'\\Leftarrow': '⇐', r'\\leftrightarrow': '↔', r'\\circ': '∘',
+            r'\\degree': '°', r'\\^\\circ': '°',
+            r'\\frac': '',  # Will handle fractions specially
+            r'\\left': '', r'\\right': '',
+            r'\\{': '{', r'\\}': '}', r'\\ ': ' ',
+        }
+        
+        result = latex
+        
+        # Handle fractions: \frac{a}{b} → a/b
+        import re
+        frac_pattern = r'\\frac\{([^}]+)\}\{([^}]+)\}'
+        def replace_frac(match):
+            num = match.group(1)
+            den = match.group(2)
+            return f'({num})/({den})'
+        result = re.sub(frac_pattern, replace_frac, result)
+        
+        # Handle superscripts: x^{2} → x²
+        sup_pattern = r'\^\{([^}]+)\}'
+        sup_replacements = {'2': '²', '3': '³', 'n': 'ⁿ', 'T': 'ᵀ'}
+        def replace_sup(match):
+            sup = match.group(1)
+            return sup_replacements.get(sup, f'^{sup}')
+        result = re.sub(sup_pattern, replace_sup, result)
+        
+        # Handle subscripts: x_{i} → xᵢ
+        sub_pattern = r'_\{([^}]+)\}'
+        sub_replacements = {'i': 'ᵢ', 'j': 'ⱼ', 'k': 'ₖ', 'n': 'ₙ', 'x': 'ₓ'}
+        def replace_sub(match):
+            sub = match.group(1)
+            return sub_replacements.get(sub, f'_{sub}')
+        result = re.sub(sub_pattern, replace_sub, result)
+        
+        # Apply other substitutions
+        for latex_sym, unicode_char in substitutions.items():
+            result = result.replace(latex_sym, unicode_char)
+        
+        # Remove remaining backslashes for unknown commands
+        result = re.sub(r'\\[a-zA-Z]+', '', result)
+        
+        # Format for display or inline
+        if display:
+            return f'\n  {result}  \n'
+        else:
+            return result
+
     def format_definition_item(self, term: Text, definition: Text) -> Text:
         """
         Format definition list item (Term : Definition).
@@ -643,7 +739,7 @@ class MarkdownFormatter:
 
     def format_mermaid_diagram(self, code: str) -> Text:
         """
-        Format Mermaid diagram as ASCII/Unicode art.
+        Format Mermaid diagram as ASCII/Unicode art with improved rendering.
         
         Args:
             code: Mermaid diagram code
@@ -653,94 +749,151 @@ class MarkdownFormatter:
         """
         result = Text()
         
-        # Add header
-        result.append("\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append("┌", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append("┐\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        # Parse the mermaid code to extract nodes and edges
+        nodes, edges, graph_type = self._parse_mermaid(code)
         
-        result.append("│", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append(" Mermaid Diagram ".center(50), style=get_rich_color_style(Colors.BOLD))
-        result.append("│\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        
-        result.append("├", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append("┤\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        
-        # Parse and render simple mermaid diagrams
-        lines = self._parse_mermaid(code)
-        for line in lines:
+        if not nodes:
+            result.append("\n")
+            result.append("┌", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("┐\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
             result.append("│", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append(" " + line.ljust(50), style=get_rich_color_style(Colors.WHITE))
+            result.append(" Mermaid Diagram ".center(50), style=get_rich_color_style(Colors.BOLD))
             result.append("│\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("├", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("┤\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("│", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("  (No diagram content)".ljust(50), style=get_rich_color_style(Colors.WHITE))
+            result.append("│\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("└", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("┘\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            return result
         
-        # Add footer
-        result.append("└", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append("┘\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        # Calculate layout based on graph type
+        if graph_type in ['LR', 'RL']:
+            # Horizontal layout
+            return self._render_horizontal_mermaid(nodes, edges, result)
+        else:
+            # Vertical layout (TD, TB, BT)
+            return self._render_vertical_mermaid(nodes, edges, result)
+    
+    def _render_vertical_mermaid(self, nodes, edges, result: Text) -> Text:
+        """Render mermaid diagram in vertical layout"""
+        node_list = list(nodes.items())
+        edge_map = {e[0]: e[1] for e in edges}
+        
+        for i, (node_id, label) in enumerate(node_list):
+            # Node box
+            box_width = max(len(label) + 4, 14)
+            result.append("┌" + "─" * box_width + "┐\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("│ " + label.center(box_width - 2) + " │\n", style=get_rich_color_style(Colors.WHITE))
+            result.append("└" + "─" * box_width + "┘\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            
+            # Edge to next node
+            if node_id in edge_map or i < len(node_list) - 1:
+                result.append("    │\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+                result.append("    ▼\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
         
         return result
     
-    def _parse_mermaid(self, code: str) -> list:
+    def _render_horizontal_mermaid(self, nodes, edges, result: Text) -> Text:
+        """Render mermaid diagram in horizontal layout"""
+        node_list = list(nodes.items())
+        edge_map = {e[0]: e[1] for e in edges}
+        
+        # Build single line
+        line = Text()
+        for i, (node_id, label) in enumerate(node_list):
+            # Node box
+            box_width = max(len(label) + 4, 12)
+            line.append("┌" + "─" * box_width + "┐", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            
+            if i < len(node_list) - 1:
+                line.append("─", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+                line.append("▶", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+                line.append("─", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        result.append("\n")
+        result.append(line)
+        result.append("\n")
+        
+        # Second line with labels
+        label_line = Text()
+        for node_id, label in node_list:
+            box_width = max(len(label) + 4, 12)
+            label_line.append("│ " + label.center(box_width - 2) + " │", style=get_rich_color_style(Colors.WHITE))
+            if node_id in edge_map:
+                label_line.append(" ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+                label_line.append(" ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+                label_line.append(" ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        result.append(label_line)
+        result.append("\n")
+        
+        # Third line with bottom border
+        border_line = Text()
+        for i, (node_id, label) in enumerate(node_list):
+            box_width = max(len(label) + 4, 12)
+            border_line.append("└" + "─" * box_width + "┘", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            if i < len(node_list) - 1:
+                border_line.append("   ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        result.append(border_line)
+        result.append("\n")
+        
+        return result
+    
+    def _parse_mermaid(self, code: str) -> tuple:
         """
-        Parse Mermaid code and convert to ASCII representation.
+        Parse Mermaid code and extract nodes, edges, and graph type.
         
         Args:
             code: Mermaid diagram code
             
         Returns:
-            List of ASCII lines representing the diagram
+            Tuple of (nodes dict, edges list, graph_type)
         """
-        lines = []
-        code_lines = code.strip().split('\n')
+        import re
+        lines = code.strip().split('\n')
         
-        # Skip direction declaration
-        content_lines = [l for l in code_lines if not l.strip().startswith('graph ') and not l.strip().startswith('flowchart ')]
+        # Determine graph type
+        graph_type = 'TD'  # Default top-down
+        for line in lines:
+            line = line.strip()
+            if line.startswith('graph ') or line.startswith('flowchart '):
+                match = re.match(r'(?:graph|flowchart)\s*(TD|TB|BT|LR|RL)?', line, re.IGNORECASE)
+                if match and match.group(1):
+                    graph_type = match.group(1).upper()
+                break
         
         # Parse nodes and edges
         nodes = {}
         edges = []
         
+        content_lines = [l for l in lines if not l.strip().startswith('graph ') and not l.strip().startswith('flowchart ') and not l.strip().startswith('%%')]
+        
         for line in content_lines:
             line = line.strip()
-            if not line or line.startswith('%%'):
+            if not line:
                 continue
             
-            # Parse node definitions like A[Label] or A(Label)
-            import re
-            # Find all nodes in the line (both sides of edges)
-            node_matches = re.findall(r'(\w+)([\[\(]([^)\]]+)[\]\)])?', line)
-            for match in node_matches:
-                node_id = match[0]
-                node_label = match[2] if match[2] else node_id
-                if node_id and node_id not in ['to', 'and', 'or', 'if', 'then', 'else']:
+            # Find all nodes: A[Label], A(Label), A{Label}, A((Label))
+            node_pattern = r'(\w+)(?:[\[\(\{]([^)\]\}]+)[\]\)\}]|\((\w+)\))'
+            for match in re.finditer(node_pattern, line):
+                node_id = match.group(1)
+                node_label = match.group(2) if match.group(2) else (match.group(3) if match.group(3) else node_id)
+                # Skip keywords
+                if node_id.lower() not in ['to', 'and', 'or', 'if', 'then', 'else', 'subgraph', 'end']:
                     nodes[node_id] = node_label
             
-            # Parse edges like A --> B or A -.-> B
-            edge_match = re.search(r'(\w+)\s*[-.]+[>]*\s*(\w+)', line)
-            if edge_match:
-                edges.append((edge_match.group(1), edge_match.group(2)))
+            # Find edges: -->, -.->, ==>
+            edge_pattern = r'(\w+)\s*(?:-+>|[.-]+>+|=+>)\s*(\w+)'
+            for match in re.finditer(edge_pattern, line):
+                edges.append((match.group(1), match.group(2)))
         
-        # Generate ASCII representation
-        if not nodes:
-            lines.append("  (No diagram content)")
-            return lines
-        
-        # Simple vertical layout showing all nodes
-        node_list = list(nodes.items())
-        for i, (node_id, label) in enumerate(node_list):
-            # Node box
-            box_width = max(len(label) + 4, 12)
-            lines.append("┌" + "─" * box_width + "┐")
-            lines.append("│ " + label.center(box_width - 2) + " │")
-            lines.append("└" + "─" * box_width + "┘")
-            
-            # Edge to next node
-            if i < len(node_list) - 1:
-                lines.append("    │")
-                lines.append("    ▼")
-        
-        return lines
+        return nodes, edges, graph_type
     
     def format_bold(self, text: str) -> Text:
         """Format bold text."""
