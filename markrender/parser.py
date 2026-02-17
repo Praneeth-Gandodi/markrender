@@ -129,32 +129,54 @@ class MarkdownParser:
     
     def parse_table_row(self, line):
         """
-        Parse table row from line
-        
+        Parse table row from line (supports both pipe and dash-separated tables)
+
         Args:
             line: Line to parse
-        
+
         Returns:
             List of cells, empty list for separator rows, or None if not a table row
         """
-        match = self.TABLE_ROW_PATTERN.match(line)
-        if match:
-            # For "| A | B |", line.split('|') gives ['', ' A ', ' B ', '']
-            # We need to strip and remove the leading/trailing empty strings
-            # Handle escaped pipes if necessary (simplified for now)
-            stripped_line = line.strip()
-            if not stripped_line.startswith('|') or not stripped_line.endswith('|'):
-                return None
+        stripped_line = line.strip()
+        
+        # Check for pipe-based table (standard GFM)
+        if stripped_line.startswith('|') or (stripped_line and '|' in stripped_line):
+            match = self.TABLE_ROW_PATTERN.match(line)
+            if match or '|' in stripped_line:
+                # Handle tables with or without leading/trailing pipes
+                if not stripped_line.startswith('|'):
+                    stripped_line = '|' + stripped_line
+                if not stripped_line.endswith('|'):
+                    stripped_line = stripped_line + '|'
                 
-            raw_cells = stripped_line.split('|')
-            # Remove the first and last empty strings from the split (due to leading/trailing '|')
-            cells = [cell.strip() for cell in raw_cells[1:-1]]
+                raw_cells = stripped_line.split('|')
+                # Remove the first and last empty strings from the split
+                cells = [cell.strip() for cell in raw_cells[1:-1]]
+                
+                if not cells:
+                    return None
+                
+                # Check if it's a separator row (----)
+                if all(re.match(r'^:?-+:?$', cell) or cell == '' for cell in cells):
+                    # Return empty list to indicate separator (keep table open)
+                    return []
+                return cells
+        
+        # Check for dash-separated table (alternative format)
+        # Pattern: "Header1 | Header2 | Header3" followed by "------|---------|--------"
+        if ' | ' in stripped_line or '\t' in stripped_line:
+            # Split by pipe with spaces or tabs
+            if ' | ' in stripped_line:
+                cells = [c.strip() for c in stripped_line.split(' | ')]
+            else:
+                cells = [c.strip() for c in stripped_line.split('\t')]
             
-            # Check if it's a separator row (----)
-            if cells and all(re.match(r'^:?-+:?$', cell) for cell in cells):
-                # Return empty list to indicate separator (keep table open)
-                return []
-            return cells
+            if len(cells) > 1:
+                # Check if this is a separator line (contains mostly dashes)
+                if all(re.match(r'^[:\-]+$', cell.strip()) for cell in cells):
+                    return []
+                return cells
+        
         return None
     
     def parse_checkbox(self, line):
