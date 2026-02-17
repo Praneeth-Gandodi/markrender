@@ -9,6 +9,7 @@ from .parser import MarkdownParser
 from .formatters import MarkdownFormatter
 from .themes import get_theme
 from .colors import get_terminal_width
+from .config import get_config
 
 
 # Ensure UTF-8 encoding on Windows
@@ -44,11 +45,12 @@ class MarkdownRenderer:
         width=None,
         output=None,
         force_color=False,
-        stream_code=True
+        stream_code=True,
+        use_config=True
     ):
         """
         Initialize markdown renderer
-        
+
         Args:
             theme: Syntax highlighting theme name (default: 'github-dark')
                    Available: github-dark, monokai, dracula, nord, one-dark,
@@ -60,7 +62,25 @@ class MarkdownRenderer:
             output: Output file object (default: sys.stdout)
             force_color: Force color output even if terminal does not support it (default: False)
             stream_code: Stream code blocks line by line (default: True). If False, render the whole block at once.
+            use_config: Load configuration from file (default: True)
         """
+        # Load config if requested
+        config = get_config() if use_config else {}
+        
+        # Apply config values if not explicitly provided
+        if theme == 'github-dark' and 'theme' in config:
+            theme = config.get('theme', theme)
+        if code_background == False:
+            code_background = config.get('code_background', code_background)
+        if line_numbers == True:
+            line_numbers = config.get('line_numbers', line_numbers)
+        if width is None:
+            width = config.get('width', width)
+        if force_color == False:
+            force_color = config.get('force_color', force_color)
+        if stream_code == True:
+            stream_code = config.get('stream_code', stream_code)
+        
         self.theme_config = get_theme(theme)
         self.code_background = code_background
         self.line_numbers = line_numbers
@@ -93,6 +113,11 @@ class MarkdownRenderer:
         self.blockquote_lines = []
         self.paragraph_buffer = []
         self.finalizing = False
+        self.in_list = False
+        self.list_stack = []  # Stack to track nested lists [(indent_level, list_type, counter)]
+        self.list_buffer = []  # Buffer for list items waiting to be rendered
+        self.footnotes = {}  # Footnote definitions
+        self.footnote_order = []  # Order of footnote references
     
     def _flush_paragraph_buffer(self):
         if self.paragraph_buffer:
@@ -101,10 +126,63 @@ class MarkdownRenderer:
             # do not flush the paragraph yet.
             if not self.finalizing and self.parser.is_inline_incomplete(paragraph):
                 return
-            
+
             formatted = self.parser.apply_inline_formatting(paragraph, self.formatter)
             self._write(formatted + '\n\n')
             self.paragraph_buffer = []
+
+    def _flush_list_buffer(self):
+        """Flush buffered list items with proper nesting support"""
+        if not self.list_buffer:
+            self.in_list = False
+            self.list_stack = []
+            return
+
+        # Sort and render list items with proper nesting
+        prev_indent = -1
+        counter = 1  # For ordered lists
+        
+        for item in self.list_buffer:
+            indent = item['indent']
+            text = item['text']
+            is_ordered = item['ordered']
+            
+            if indent > prev_indent and prev_indent >= 0:
+                # Starting a nested list - push to stack
+                self.list_stack.append((indent, is_ordered, counter))
+                counter = 1
+            elif indent < prev_indent:
+                # Ending nested list(s) - pop from stack
+                while self.list_stack and self.list_stack[-1][0] >= indent:
+                    self.list_stack.pop()
+                if self.list_stack:
+                    counter = self.list_stack[-1][2] + 1
+                    self.list_stack[-1] = (self.list_stack[-1][0], self.list_stack[-1][1], counter)
+                else:
+                    counter = 1
+            
+            # Determine current list type from stack or current item
+            if self.list_stack:
+                is_ordered = self.list_stack[-1][1]
+            
+            # Format and write the list item
+            formatted_text = self.parser.apply_inline_formatting(text, self.formatter)
+            formatted = self.formatter.format_list_item(
+                formatted_text, 
+                ordered=is_ordered, 
+                number=counter if is_ordered else 1, 
+                indent_level=indent
+            )
+            self._write(formatted + '\n')
+            
+            if is_ordered:
+                counter += 1
+            
+            prev_indent = indent
+
+        self.list_buffer = []
+        self.in_list = False
+        self.list_stack = []
 
     def render(self, chunk):
         """
@@ -349,7 +427,28 @@ class MarkdownRenderer:
                 self._flush_table()
             self._write(self.formatter.format_hr())
             return
-        
+
+        # Footnote definition
+        footnote_def = self.parser.parse_footnote_def(stripped)
+        if footnote_def:
+            footnote_id, content = footnote_def
+            self.footnotes[footnote_id] = content
+            if footnote_id not in self.footnote_order:
+                self.footnote_order.append(footnote_id)
+            return
+
+        # Definition list (Term : Definition)
+        definition = self.parser.parse_definition_item(stripped)
+        if definition:
+            if self.in_table:
+                self._flush_table()
+            term, def_text = definition
+            term_formatted = self.parser.apply_inline_formatting(term, self.formatter)
+            def_formatted = self.parser.apply_inline_formatting(def_text, self.formatter)
+            formatted = self.formatter.format_definition_item(term_formatted, def_formatted)
+            self._write(formatted + '\n')
+            return
+
         # Heading
         heading = self.parser.parse_heading(stripped)
         if heading:
@@ -371,28 +470,47 @@ class MarkdownRenderer:
             formatted = self.formatter.format_checkbox(checked, text)
             self._write(formatted + '\n')
             return
-        
+
+        # Progress checkbox (e.g., - [50%] Task)
+        progress_checkbox = self.parser.parse_progress_checkbox(stripped)
+        if progress_checkbox:
+            if self.in_table:
+                self._flush_table()
+            indent, percentage, text = progress_checkbox
+            text = self.parser.apply_inline_formatting(text, self.formatter)
+            formatted = self.formatter.format_progress_bar(percentage, text, indent)
+            self._write(formatted + '\n')
+            return
+
         # Ordered list
         ordered_item = self.parser.parse_ordered_list_item(stripped)
         if ordered_item:
             if self.in_table:
                 self._flush_table()
             indent, number, text = ordered_item
-            text = self.parser.apply_inline_formatting(text, self.formatter)
-            formatted = self.formatter.format_list_item(text, ordered=True, number=number, indent_level=indent)
-            self._write(formatted + '\n')
+            # Buffer the list item for nested processing
+            if not self.in_list:
+                self.in_list = True
+            self.list_buffer.append({'indent': indent, 'text': text, 'ordered': True})
             return
-        
+        elif self.in_list and not self.in_blockquote:
+            # End of list - flush buffer
+            self._flush_list_buffer()
+
         # Unordered list
         list_item = self.parser.parse_list_item(stripped)
         if list_item:
             if self.in_table:
                 self._flush_table()
             indent, text = list_item
-            text = self.parser.apply_inline_formatting(text, self.formatter)
-            formatted = self.formatter.format_list_item(text, ordered=False, indent_level=indent)
-            self._write(formatted + '\n')
+            # Buffer the list item for nested processing
+            if not self.in_list:
+                self.in_list = True
+            self.list_buffer.append({'indent': indent, 'text': text, 'ordered': False})
             return
+        elif self.in_list and not self.in_blockquote:
+            # End of list - flush buffer
+            self._flush_list_buffer()
         
         # Regular text
         if stripped:
@@ -418,10 +536,10 @@ class MarkdownRenderer:
         # Flush any incomplete blocks
         self._flush_paragraph_buffer()
 
-        
+
         if self.in_table: # If a table is still open, flush it
             self._flush_table()
-        
+
         if self.in_blockquote and self.blockquote_lines:
             # Apply inline formatting to blockquote lines before rendering
             formatted_lines = []
@@ -432,7 +550,22 @@ class MarkdownRenderer:
             self._write(formatted + '\n')
             self.in_blockquote = False
             self.blockquote_lines = []
-        
+
+        # Flush any remaining list items
+        if self.in_list and self.list_buffer:
+            self._flush_list_buffer()
+
+        # Render footnotes section
+        if self.footnotes:
+            footnotes_list = []
+            for i, footnote_id in enumerate(self.footnote_order, 1):
+                content = self.footnotes.get(footnote_id, '')
+                content_formatted = self.parser.apply_inline_formatting(content, self.formatter)
+                footnotes_list.append((footnote_id, content_formatted, i))
+            
+            footnotes_section = self.formatter.format_footnotes_section(footnotes_list)
+            self._write(footnotes_section)
+
         # Flush output
         self.output.flush()
         self.finalizing = False

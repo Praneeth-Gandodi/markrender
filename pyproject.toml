@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "markrender"
-version = "1.0.2"
+version = "1.0.4"
 description = "Professional terminal markdown renderer for streaming LLM responses"
 readme = "README.md"
 requires-python = ">=3.7"
@@ -29,6 +29,7 @@ dependencies = [
     "emoji~=2.15.0",
     "rich~=14.3.2",
     "colorama~=0.4.6",
+    "tomli>=2.0.0; python_version<'3.11'",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,9 @@ dev = [
     "pytest~=6.0.0",
     "pytest-cov~=2.10.0",
 ]
+
+[project.scripts]
+markrender = "markrender.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Praneeth-Gandodi/markrender"

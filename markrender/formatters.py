@@ -21,7 +21,7 @@ from rich.ansi import AnsiDecoder
 from io import StringIO
 rich_available = True # Assuming rich is installed based on pyproject.toml
 
-from .colors import Colors, get_terminal_width, get_rich_color_style, colorize
+from .colors import Colors, get_terminal_width, get_rich_color_style, colorize, rgb
 
 
 class MarkdownFormatter:
@@ -293,8 +293,62 @@ class MarkdownFormatter:
             box = Text('✅', style=get_rich_color_style(self.theme['checkbox_checked']))
         else:
             box = Text('⬜', style=get_rich_color_style(self.theme['checkbox_unchecked']))
-        
+
         return Text.assemble(box, "  ", Text.from_markup(text) if isinstance(text, str) else text)
+
+    def format_progress_bar(self, percentage: int, text: Text, indent_level: int = 0) -> Text:
+        """
+        Format progress bar task item (e.g., - [50%] Task name)
+        
+        Args:
+            percentage: Progress percentage (0-100)
+            text: Task description
+            indent_level: Nesting level for indentation
+            
+        Returns:
+            Formatted progress bar rich.Text object
+        """
+        indent = '  ' * indent_level
+        
+        # Create progress bar
+        bar_width = 30
+        filled = int(bar_width * percentage / 100)
+        empty = bar_width - filled
+        
+        # Color based on progress
+        if percentage >= 100:
+            bar_color = self.theme.get('checkbox_checked', Colors.GREEN)
+            status_icon = '✅'
+        elif percentage >= 75:
+            bar_color = rgb(100, 200, 100)  # Light green
+            status_icon = '🟢'
+        elif percentage >= 50:
+            bar_color = rgb(255, 200, 0)  # Yellow
+            status_icon = '🟡'
+        elif percentage >= 25:
+            bar_color = rgb(255, 150, 0)  # Orange
+            status_icon = '🟠'
+        else:
+            bar_color = rgb(200, 100, 100)  # Red
+            status_icon = '🔴'
+        
+        # Build progress bar string
+        bar = '█' * filled + '░' * empty
+        percentage_str = f'{percentage:3d}%'
+        
+        # Assemble the final text
+        result = Text(indent)
+        result.append(f'{status_icon} [', style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append(bar, style=get_rich_color_style(bar_color))
+        result.append(f'] {percentage_str}', style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append(' ')
+        
+        if isinstance(text, Text):
+            result.append(text)
+        else:
+            result.append(Text(str(text)))
+        
+        return result
     
     def format_blockquote(self, lines_data: list[tuple[str, int]]) -> Text:
         """
@@ -448,6 +502,116 @@ class MarkdownFormatter:
             except Exception:
                 pass
         return Text(f":{emoji_code}:", style=get_rich_color_style(Colors.YELLOW))
+
+    def format_image(self, alt_text: str, url: str) -> str:
+        """
+        Format image as a placeholder with alt text and URL.
+        
+        Args:
+            alt_text: Image alt text
+            url: Image URL
+            
+        Returns:
+            Formatted image placeholder string
+        """
+        # Create a visual image placeholder
+        width = min(self.width - 4, 60)
+        
+        # Build the placeholder
+        top_border = '╔' + '═' * width + '╗'
+        
+        # Icon and alt text
+        icon = "🖼️"
+        alt_display = alt_text if alt_text else "Image"
+        if len(alt_display) > width - 6:
+            alt_display = alt_display[:width - 9] + "..."
+        
+        middle_line = f'║ {icon}  {alt_display.center(width - 8)} ║'
+        
+        # URL (truncated if too long)
+        url_display = url if len(url) <= width - 6 else url[:width - 9] + "..."
+        url_line = f'║    {url_display.center(width - 8)} ║'
+        
+        bottom_border = '╚' + '═' * width + '╝'
+        
+        return f'\n{top_border}\n{middle_line}\n{url_line}\n{bottom_border}\n'
+
+    def format_footnote_ref(self, footnote_id: str, footnote_num: int) -> Text:
+        """
+        Format footnote reference (superscript number).
+        
+        Args:
+            footnote_id: Footnote identifier
+            footnote_num: Footnote number in sequence
+            
+        Returns:
+            Formatted footnote reference Text object
+        """
+        return Text(f'[{footnote_num}]', style=get_rich_color_style(self.theme.get('link', Colors.BLUE)) + " superscript")
+
+    def format_footnotes_section(self, footnotes: list) -> Text:
+        """
+        Format the footnotes section at the end of the document.
+        
+        Args:
+            footnotes: List of tuples (footnote_id, content, number)
+            
+        Returns:
+            Formatted footnotes section Text object
+        """
+        if not footnotes:
+            return Text("")
+        
+        result = Text("\n")
+        result.append("─" * 40 + "\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append("Footnotes:\n", style=get_rich_color_style(Colors.BOLD))
+        result.append("─" * 40 + "\n\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        for footnote_id, content, num in footnotes:
+            # Footnote marker
+            result.append(f'[{num}] ', style=get_rich_color_style(self.theme.get('link', Colors.BLUE)) + " bold")
+            
+            # Footnote content
+            if isinstance(content, Text):
+                result.append(content)
+            else:
+                result.append(Text(str(content)))
+            
+            result.append("\n")
+        
+        return result
+
+    def format_definition_item(self, term: Text, definition: Text) -> Text:
+        """
+        Format definition list item (Term : Definition).
+        
+        Args:
+            term: Term text (formatted)
+            definition: Definition text (formatted)
+            
+        Returns:
+            Formatted definition item Text object
+        """
+        result = Text()
+        
+        # Term in bold
+        if isinstance(term, Text):
+            term_copy = term.copy()
+            term_copy.stylize(get_rich_color_style(Colors.BOLD))
+            result.append(term_copy)
+        else:
+            result.append(Text(str(term), style=get_rich_color_style(Colors.BOLD)))
+        
+        # Separator
+        result.append(Text(" : ", style=get_rich_color_style(Colors.BRIGHT_BLACK)))
+        
+        # Definition
+        if isinstance(definition, Text):
+            result.append(definition)
+        else:
+            result.append(Text(str(definition)))
+        
+        return result
     
     def format_bold(self, text: str) -> Text:
         """Format bold text."""
@@ -460,3 +624,7 @@ class MarkdownFormatter:
     def format_strikethrough(self, text: str) -> Text:
         """Format strikethrough text."""
         return Text(text, style=get_rich_color_style(Colors.DIM) + " strike")
+
+    def format_highlight(self, text: str) -> Text:
+        """Format highlighted text."""
+        return Text(text, style=get_rich_color_style(self.theme.get('highlight', Colors.YELLOW_BG)))

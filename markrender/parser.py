@@ -16,13 +16,23 @@ class MarkdownParser:
     BOLD_PATTERN = re.compile(r'\*\*(.+?)\*\*')
     ITALIC_PATTERN = re.compile(r'\*([^\*]+)\*')
     STRIKETHROUGH_PATTERN = re.compile(r'~~([^~]+)~~')
+    HIGHLIGHT_PATTERN = re.compile(r'==([^=]+)==')
     LINK_PATTERN = re.compile(r'\[([^\]]+)\]\(([^\)]+)\)')
     # Also support angle bracket links: <url>
     ANGLE_LINK_PATTERN = re.compile(r'<([a-zA-Z][a-zA-Z0-9+.-]*://[^>]+)>')
+    # Image pattern: ![alt text](url)
+    IMAGE_PATTERN = re.compile(r'!\[([^\]]*)\]\(([^\)]+)\)')
+    # Footnote reference: [^1] or [^name]
+    FOOTNOTE_REF_PATTERN = re.compile(r'\[\^([^\]]+)\]')
+    # Footnote definition: [^1]: content
+    FOOTNOTE_DEF_PATTERN = re.compile(r'^\[\^([^\]]+)\]:\s*(.+)$', re.MULTILINE)
     EMOJI_PATTERN = re.compile(r':([a-z0-9_+-]+):')
     CHECKBOX_PATTERN = re.compile(r'^(\s*)-\s+\[([ xX])\]\s+(.+)$', re.MULTILINE)
+    PROGRESS_CHECKBOX_PATTERN = re.compile(r'^(\s*)-\s+\[(\d{1,3})%\]\s*(.*)$', re.MULTILINE)
     LIST_ITEM_PATTERN = re.compile(r'^(\s*)[-*•]\s+(.+)$', re.MULTILINE)
     ORDERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)\.\s+(.+)$', re.MULTILINE)
+    # Definition list: Term : Definition (requires space before and after colon, no emoji patterns)
+    DEFINITION_LIST_PATTERN = re.compile(r'^([A-Za-z][^\s:].*?)\s{2,}:\s{2,}(.+)$')
     BLOCKQUOTE_PATTERN = re.compile(r'^((?:>\s?)+)(.*)$', re.MULTILINE)
     # Also support box-drawing character │ for blockquotes (common in some markdown styles)
     BOX_BLOCKQUOTE_PATTERN = re.compile(r'^(\s*[│|](?:\s*[│|])*)\s*(.*)$')
@@ -43,6 +53,8 @@ class MarkdownParser:
         self.table_buffer = []
         self.in_latex_inline = False
         self.in_latex_display = False
+        self.footnotes = {}  # Dictionary to store footnote definitions
+        self.footnote_order = []  # List to maintain footnote order
     
     def is_complete_element(self, text):
         """
@@ -146,10 +158,10 @@ class MarkdownParser:
     def parse_checkbox(self, line):
         """
         Parse checkbox from line
-        
+
         Args:
             line: Line to parse
-        
+
         Returns:
             Tuple of (checked, text) or None
         """
@@ -159,7 +171,88 @@ class MarkdownParser:
             text = match.group(3)
             return (checked, text)
         return None
-    
+
+    def parse_image(self, text):
+        """
+        Parse image from text
+
+        Args:
+            text: Text to parse
+
+        Returns:
+            Tuple of (alt_text, url) or None
+        """
+        match = self.IMAGE_PATTERN.search(text)
+        if match:
+            alt_text = match.group(1)
+            url = match.group(2)
+            return (alt_text, url)
+        return None
+
+    def parse_footnote_def(self, line):
+        """
+        Parse footnote definition from line
+
+        Args:
+            line: Line to parse
+
+        Returns:
+            Tuple of (footnote_id, content) or None
+        """
+        match = self.FOOTNOTE_DEF_PATTERN.match(line)
+        if match:
+            footnote_id = match.group(1)
+            content = match.group(2)
+            return (footnote_id, content)
+        return None
+
+    def parse_footnote_ref(self, text):
+        """
+        Parse footnote reference from text
+
+        Args:
+            text: Text to parse
+
+        Returns:
+            List of footnote IDs found or empty list
+        """
+        return self.FOOTNOTE_REF_PATTERN.findall(text)
+
+    def parse_definition_item(self, line):
+        """
+        Parse definition list item (Term : Definition)
+
+        Args:
+            line: Line to parse
+
+        Returns:
+            Tuple of (term, definition) or None
+        """
+        match = self.DEFINITION_LIST_PATTERN.match(line)
+        if match:
+            term = match.group(1).strip()
+            definition = match.group(2).strip()
+            return (term, definition)
+        return None
+
+    def parse_progress_checkbox(self, line):
+        """
+        Parse progress checkbox (e.g., - [50%] Task name)
+
+        Args:
+            line: Line to parse
+
+        Returns:
+            Tuple of (indent, percentage, text) or None
+        """
+        match = self.PROGRESS_CHECKBOX_PATTERN.match(line)
+        if match:
+            indent = len(match.group(1)) // 2
+            percentage = min(100, max(0, int(match.group(2))))
+            text = match.group(3)
+            return (indent, percentage, text)
+        return None
+
     def parse_list_item(self, line):
         """
         Parse unordered list item from line
@@ -276,6 +369,9 @@ class MarkdownParser:
         # Check for unclosed strikethrough
         if text.count('~~') % 2 != 0:
             return True
+        # Check for unclosed highlight
+        if text.count('==') % 2 != 0:
+            return True
         # Check for unclosed links (simplified)
         if text.count('[') > text.count(']'):
             return True
@@ -318,8 +414,12 @@ class MarkdownParser:
         # First, handle LaTeX expressions and angle links by replacing them with placeholders
         latex_parts = []
         angle_link_parts = []
+        image_parts = []
+        footnote_parts = []
         latex_placeholder = '\x00LATEXPLACEHOLDER{}\x00'
         angle_link_placeholder = '\x00ANGLELINKPLACEHOLDER{}\x00'
+        image_placeholder = '\x00IMAGEPLACEHOLDER{}\x00'
+        footnote_placeholder = '\x00FOOTNOTEPLACEHOLDER{}\x00'
 
         def save_latex(match):
             latex_parts.append(('inline', match.group(0)))
@@ -333,12 +433,25 @@ class MarkdownParser:
             angle_link_parts.append(match.group(1))  # Save just the URL
             return angle_link_placeholder.format(len(angle_link_parts) - 1)
 
+        def save_image(match):
+            image_parts.append((match.group(1), match.group(2)))  # (alt_text, url)
+            return image_placeholder.format(len(image_parts) - 1)
+
+        def save_footnote(match):
+            footnote_id = match.group(1)
+            footnote_parts.append(footnote_id)
+            return footnote_placeholder.format(len(footnote_parts) - 1)
+
         # Save display math first (more specific)
         text = self.LATEX_DISPLAY_PATTERN.sub(save_display_latex, text)
         # Then save inline math
         text = self.LATEX_INLINE_PATTERN.sub(save_latex, text)
         # Save angle bracket links
         text = self.ANGLE_LINK_PATTERN.sub(save_angle_link, text)
+        # Save images
+        text = self.IMAGE_PATTERN.sub(save_image, text)
+        # Save footnote references
+        text = self.FOOTNOTE_REF_PATTERN.sub(save_footnote, text)
 
         # First, handle inline code separately to avoid processing formatting inside code
         code_parts = self._split_by_inline_code(text)
@@ -375,7 +488,24 @@ class MarkdownParser:
             start = result_text.find(placeholder)
             if start != -1:
                 replacements.append((start, start + len(placeholder), url))
-        
+
+        for i, (alt_text, url) in enumerate(image_parts):
+            placeholder = image_placeholder.format(i)
+            start = result_text.find(placeholder)
+            if start != -1:
+                # Replace with formatted image placeholder
+                image_display = formatter.format_image(alt_text, url)
+                replacements.append((start, start + len(placeholder), image_display))
+
+        for i, footnote_id in enumerate(footnote_parts):
+            placeholder = footnote_placeholder.format(i)
+            start = result_text.find(placeholder)
+            if start != -1:
+                # Replace with formatted footnote reference (convert Text to string)
+                footnote_num = i + 1
+                footnote_display = formatter.format_footnote_ref(footnote_id, footnote_num)
+                replacements.append((start, start + len(placeholder), footnote_display.plain))
+
         # Sort replacements by position (in reverse order to replace from end to start)
         replacements.sort(key=lambda x: x[0], reverse=True)
         
@@ -628,23 +758,74 @@ class MarkdownParser:
     
     def _apply_non_strike_formatting(self, text, formatter):
         """
-        Apply non-strikethrough formatting (emoji) to text.
+        Apply non-strikethrough formatting (highlight, emoji) to text.
         """
         from rich.text import Text
-        
+
         if not text:
             return Text("")
-        
+
+        # Handle highlight
+        highlight_parts = self._split_by_highlight(text)
+
+        result = Text()
+        for i, part in enumerate(highlight_parts):
+            if i % 2 == 1:  # This is a highlight part
+                formatted_part = self._apply_non_highlight_formatting(part, formatter)
+                highlight_style = formatter.format_highlight("").style
+                formatted_part.stylize(highlight_style)
+                result.append(formatted_part)
+            else:  # This is a non-highlight part
+                result.append(self._apply_non_highlight_formatting(part, formatter))
+
+        return result
+
+    def _split_by_highlight(self, text):
+        """
+        Split text by highlight markers, alternating between non-highlight and highlight parts.
+        """
+        import re
+        parts = []
+        last_end = 0
+
+        for match in self.HIGHLIGHT_PATTERN.finditer(text):
+            start, end = match.span()
+
+            # Add the non-highlight part before this match
+            if start > last_end:
+                parts.append(text[last_end:start])
+
+            # Add the highlight content (without the ==)
+            highlight_content = match.group(1)
+            parts.append(highlight_content)
+
+            last_end = end
+
+        # Add the remaining non-highlight part
+        if last_end < len(text):
+            parts.append(text[last_end:])
+
+        return parts
+
+    def _apply_non_highlight_formatting(self, text, formatter):
+        """
+        Apply non-highlight formatting (emoji) to text.
+        """
+        from rich.text import Text
+
+        if not text:
+            return Text("")
+
         # Handle emoji
         emoji_parts = self._split_by_emoji(text)
-        
+
         result = Text()
         for i, part in enumerate(emoji_parts):
             if i % 2 == 1:  # This is an emoji part
                 result.append(formatter.format_emoji(part))
             else:  # This is a non-emoji part
                 result.append(Text(part))
-        
+
         return result
     
     def _split_by_emoji(self, text):

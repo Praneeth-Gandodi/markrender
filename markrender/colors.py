@@ -62,6 +62,7 @@ class Colors:
     DIM = '\033[2m'
     ITALIC = '\033[3m'
     UNDERLINE = '\033[4m'
+    YELLOW_BG = '\033[43m'
 
 
 def get_rich_color_style(ansi_color_code, is_background=False):

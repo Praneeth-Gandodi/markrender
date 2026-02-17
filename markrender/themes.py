@@ -28,6 +28,7 @@ SYNTAX_THEMES = {
         'note_color': rgb(229, 192, 123),
         'list_marker': rgb(88, 166, 255),
         'table_header': rgb(88, 166, 255),
+        'highlight': rgb(255, 255, 0),  # Yellow for highlight
     },
     'monokai': {
         'name': 'monokai',
@@ -50,6 +51,7 @@ SYNTAX_THEMES = {
         'note_color': rgb(230, 219, 116),
         'list_marker': rgb(102, 217, 239),  # Cyan
         'table_header': rgb(249, 38, 114),  # Pink
+        'highlight': rgb(230, 219, 116),  # Yellow for highlight
     },
     'dracula': {
         'name': 'dracula',
@@ -72,6 +74,7 @@ SYNTAX_THEMES = {
         'note_color': rgb(241, 250, 140),
         'list_marker': rgb(189, 147, 249),  # Purple
         'table_header': rgb(255, 121, 198),  # Pink
+        'highlight': rgb(241, 250, 140),  # Yellow for highlight
     },
     'nord': {
         'name': 'nord',
@@ -94,6 +97,7 @@ SYNTAX_THEMES = {
         'note_color': rgb(235, 203, 139),
         'list_marker': rgb(136, 192, 208),  # Frost blue
         'table_header': rgb(136, 192, 208),
+        'highlight': rgb(235, 203, 139),  # Yellow for highlight
     },
     'one-dark': {
         'name': 'one-dark',
@@ -116,6 +120,7 @@ SYNTAX_THEMES = {
         'note_color': rgb(229, 192, 123),
         'list_marker': rgb(97, 175, 239),
         'table_header': rgb(224, 108, 117),
+        'highlight': rgb(229, 192, 123),  # Yellow for highlight
     },
     'solarized-dark': {
         'name': 'solarized-dark',
@@ -138,6 +143,7 @@ SYNTAX_THEMES = {
         'note_color': rgb(181, 137, 0),
         'list_marker': rgb(38, 139, 210),
         'table_header': rgb(133, 153, 0),
+        'highlight': rgb(181, 137, 0),  # Yellow for highlight
     },
     'solarized-light': {
         'name': 'solarized-light',
@@ -160,6 +166,7 @@ SYNTAX_THEMES = {
         'note_color': rgb(181, 137, 0),
         'list_marker': rgb(38, 139, 210),
         'table_header': rgb(133, 153, 0),
+        'highlight': rgb(181, 137, 0),  # Yellow for highlight
     },
 }
 
@@ -186,8 +193,42 @@ def get_theme(theme_name):
 def list_themes():
     """
     Get list of available theme names
-    
+
     Returns:
         List of theme names
     """
     return list(SYNTAX_THEMES.keys())
+
+
+def register_theme(name, theme_config):
+    """
+    Register a custom theme.
+    
+    Args:
+        name: Theme name
+        theme_config: Theme configuration dictionary with keys:
+            - name: Theme display name
+            - pygments_style: Pygments style name
+            - heading_colors: Dict mapping level (1-6) to colors
+            - inline_code: Color for inline code
+            - link: Color for links
+            - blockquote_border: Color for blockquote borders
+            - table_border: Color for table borders
+            - checkbox_unchecked: Color for unchecked checkboxes
+            - checkbox_checked: Color for checked checkboxes
+            - hr: Color for horizontal rules
+            - highlight: Color for highlighted text
+            - list_marker: Color for list markers
+            - table_header: Color for table headers
+            
+    Example:
+        register_theme('my-theme', {
+            'name': 'my-theme',
+            'pygments_style': 'monokai',
+            'heading_colors': {1: '#ff0000', ...},
+            'inline_code': '#00ff00',
+            'link': '#0000ff',
+            ...
+        })
+    """
+    SYNTAX_THEMES[name] = theme_config
