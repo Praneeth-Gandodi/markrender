@@ -9,7 +9,54 @@ import os
 from pathlib import Path
 
 from .renderer import MarkdownRenderer
-from .themes import list_themes
+from .themes import list_themes, get_theme
+from .colors import Colors
+
+
+def preview_themes():
+    """Preview all available themes"""
+    print("=" * 60)
+    print("MarkRender Theme Preview")
+    print("=" * 60)
+    print()
+    
+    sample_markdown = """
+## Sample Heading 2
+This is a sample text with **bold**, *italic*, and `inline code`.
+
+```python
+def hello():
+    print("Hello, World!")
+```
+
+- List item 1
+- List item 2
+
+> A blockquote example
+
+| Col1 | Col2 |
+|------|------|
+| A    | B    |
+"""
+    
+    for theme_name in list_themes():
+        print(f"\n{'─' * 60}")
+        print(f"Theme: {theme_name}")
+        print('─' * 60)
+        
+        renderer = MarkdownRenderer(
+            theme=theme_name,
+            line_numbers=False,
+            code_background=False,
+            force_color=True
+        )
+        renderer.render(sample_markdown)
+        renderer.finalize()
+        print()
+    
+    print("\n" + "=" * 60)
+    print(f"Total themes: {len(list_themes())}")
+    print("=" * 60)
 
 
 def main():
@@ -24,6 +71,7 @@ Examples:
   markrender --theme dracula file.md
   cat file.md | markrender
   markrender --list-themes
+  markrender --preview-themes
         """
     )
 
@@ -80,9 +128,15 @@ Examples:
     )
 
     parser.add_argument(
+        '--preview-themes',
+        action='store_true',
+        help='Preview all available themes with sample content and exit'
+    )
+
+    parser.add_argument(
         '-v', '--version',
         action='version',
-        version='%(prog)s 1.0.0'
+        version='%(prog)s 1.0.5'
     )
 
     args = parser.parse_args()
@@ -92,6 +146,11 @@ Examples:
         print("Available themes:")
         for theme in list_themes():
             print(f"  - {theme}")
+        return 0
+
+    # Handle --preview-themes
+    if args.preview_themes:
+        preview_themes()
         return 0
 
     try:

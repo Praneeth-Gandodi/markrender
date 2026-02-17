@@ -12,6 +12,8 @@ class MarkdownParser:
     # Regex patterns for markdown elements
     HEADING_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
     CODE_BLOCK_START = re.compile(r'^\s*```(\w*)\s*$', re.MULTILINE)
+    # Also support mermaid diagrams
+    MERMAID_BLOCK_START = re.compile(r'^\s*```(mermaid)\s*$', re.MULTILINE)
     INLINE_CODE_PATTERN = re.compile(r'`([^`]+)`')
     BOLD_PATTERN = re.compile(r'\*\*(.+?)\*\*')
     ITALIC_PATTERN = re.compile(r'\*([^\*]+)\*')

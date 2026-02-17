@@ -301,7 +301,12 @@ class MarkdownRenderer:
         # Code block handling
         if self.in_code_block:
             if self.parser.parse_code_block_delimiter(stripped) is not None:
-                if not self.stream_code:
+                if self.code_language == 'mermaid':
+                    # Render mermaid diagram
+                    code = '\n'.join(self.code_buffer)
+                    formatted = self.formatter.format_mermaid_diagram(code)
+                    self._write(formatted)
+                elif not self.stream_code:
                     code = '\n'.join(self.code_buffer)
                     formatted = self.formatter.format_code_block(code, self.code_language, self.line_numbers)
                     self._write(formatted)
@@ -311,7 +316,9 @@ class MarkdownRenderer:
                 self.code_language = ''
                 self.code_buffer = []
             else:
-                if self.stream_code:
+                if self.code_language == 'mermaid':
+                    self.code_buffer.append(line)
+                elif self.stream_code:
                     self._write(self.formatter.stream_code_line(line, self.code_language, self.line_numbers))
                 else:
                     self.code_buffer.append(line)
@@ -324,7 +331,10 @@ class MarkdownRenderer:
                     self._flush_table()
                 self.in_code_block = True
                 self.code_language = lang
-                if self.stream_code:
+                if lang == 'mermaid':
+                    # Mermaid diagrams are rendered as a whole at the end
+                    self.code_buffer = []
+                elif self.stream_code:
                     self._write(self.formatter.start_code_block(self.code_language, self.line_numbers))
             return
 

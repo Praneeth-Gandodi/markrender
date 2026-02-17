@@ -477,11 +477,39 @@ class MarkdownFormatter:
     
     def format_link(self, text: str, url: str) -> Text:
         """
-        Format link by returning a rich Text object.
+        Format link with enhanced visual styling.
+        
+        Args:
+            text: Link text
+            url: Link URL
+            
+        Returns:
+            Formatted link Text object with icon and styling
         """
-        link_style = get_rich_color_style(self.theme['link']) + " underline"
-        full_style = f"{link_style} link={url}"
-        return Text(text, style=full_style)
+        from rich.text import Text
+        
+        # Determine link icon based on URL type
+        icon = "🔗"  # Default link icon
+        if url.startswith('mailto:'):
+            icon = "📧"
+        elif url.startswith('tel:'):
+            icon = "📞"
+        elif 'github' in url.lower():
+            icon = "🐙"
+        elif url.startswith('https://'):
+            icon = "🔒"  # Secure link
+        elif url.startswith('http://'):
+            icon = "🔓"  # Non-secure link
+        
+        # Create styled link text
+        link_style = get_rich_color_style(self.theme.get('link', Colors.BLUE)) + " underline"
+        
+        result = Text()
+        result.append(f"{icon} ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append(text, style=link_style)
+        result.append(f" ({url})", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        return result
     
     def format_hr(self) -> Text:
         """
@@ -612,6 +640,107 @@ class MarkdownFormatter:
             result.append(Text(str(definition)))
         
         return result
+
+    def format_mermaid_diagram(self, code: str) -> Text:
+        """
+        Format Mermaid diagram as ASCII/Unicode art.
+        
+        Args:
+            code: Mermaid diagram code
+            
+        Returns:
+            Formatted diagram Text object
+        """
+        result = Text()
+        
+        # Add header
+        result.append("\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append("┌", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append("┐\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        result.append("│", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append(" Mermaid Diagram ".center(50), style=get_rich_color_style(Colors.BOLD))
+        result.append("│\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        result.append("├", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append("┤\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        # Parse and render simple mermaid diagrams
+        lines = self._parse_mermaid(code)
+        for line in lines:
+            result.append("│", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append(" " + line.ljust(50), style=get_rich_color_style(Colors.WHITE))
+            result.append("│\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        # Add footer
+        result.append("└", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append("┘\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        return result
+    
+    def _parse_mermaid(self, code: str) -> list:
+        """
+        Parse Mermaid code and convert to ASCII representation.
+        
+        Args:
+            code: Mermaid diagram code
+            
+        Returns:
+            List of ASCII lines representing the diagram
+        """
+        lines = []
+        code_lines = code.strip().split('\n')
+        
+        # Skip direction declaration
+        content_lines = [l for l in code_lines if not l.strip().startswith('graph ') and not l.strip().startswith('flowchart ')]
+        
+        # Parse nodes and edges
+        nodes = {}
+        edges = []
+        
+        for line in content_lines:
+            line = line.strip()
+            if not line or line.startswith('%%'):
+                continue
+            
+            # Parse node definitions like A[Label] or A(Label)
+            import re
+            # Find all nodes in the line (both sides of edges)
+            node_matches = re.findall(r'(\w+)([\[\(]([^)\]]+)[\]\)])?', line)
+            for match in node_matches:
+                node_id = match[0]
+                node_label = match[2] if match[2] else node_id
+                if node_id and node_id not in ['to', 'and', 'or', 'if', 'then', 'else']:
+                    nodes[node_id] = node_label
+            
+            # Parse edges like A --> B or A -.-> B
+            edge_match = re.search(r'(\w+)\s*[-.]+[>]*\s*(\w+)', line)
+            if edge_match:
+                edges.append((edge_match.group(1), edge_match.group(2)))
+        
+        # Generate ASCII representation
+        if not nodes:
+            lines.append("  (No diagram content)")
+            return lines
+        
+        # Simple vertical layout showing all nodes
+        node_list = list(nodes.items())
+        for i, (node_id, label) in enumerate(node_list):
+            # Node box
+            box_width = max(len(label) + 4, 12)
+            lines.append("┌" + "─" * box_width + "┐")
+            lines.append("│ " + label.center(box_width - 2) + " │")
+            lines.append("└" + "─" * box_width + "┘")
+            
+            # Edge to next node
+            if i < len(node_list) - 1:
+                lines.append("    │")
+                lines.append("    ▼")
+        
+        return lines
     
     def format_bold(self, text: str) -> Text:
         """Format bold text."""
