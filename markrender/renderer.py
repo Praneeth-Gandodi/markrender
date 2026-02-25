@@ -9,7 +9,7 @@ from .parser import MarkdownParser
 from .formatters import MarkdownFormatter
 from .themes import get_theme
 from .colors import get_terminal_width
-from .config import get_config
+from .config import RendererConfig
 
 
 # Ensure UTF-8 encoding on Windows
@@ -46,58 +46,80 @@ class MarkdownRenderer:
         output=None,
         force_color=False,
         stream_code=True,
-        use_config=True
+        use_config=True,
+        config=None,
+        dim_mode=False
     ):
         """
         Initialize markdown renderer
 
         Args:
             theme: Syntax highlighting theme name (default: 'github-dark')
-                   Available: github-dark, monokai, dracula, nord, one-dark,
-                              solarized-dark, solarized-light
             code_background: Show background in code blocks (default: False)
             inline_code_color: Custom ANSI color for inline code (default: theme default)
             line_numbers: Show line numbers in code blocks (default: True)
             width: Terminal width (default: auto-detect)
             output: Output file object (default: sys.stdout)
             force_color: Force color output even if terminal does not support it (default: False)
-            stream_code: Stream code blocks line by line (default: True). If False, render the whole block at once.
+            stream_code: Stream code blocks line by line (default: True).
             use_config: Load configuration from file (default: True)
+            config: Optional RendererConfig instance
+            dim_mode: Enable dim mode (dimmed text, reduced colors)
         """
-        # Load config if requested
-        config = get_config() if use_config else {}
+        # Initialize configuration
+        if config is not None:
+            self.config = config
+        elif use_config:
+            self.config = RendererConfig.from_file()
+        else:
+            self.config = RendererConfig(
+                theme=theme,
+                code_background=code_background,
+                inline_code_color=inline_code_color,
+                line_numbers=line_numbers,
+                width=width,
+                force_color=force_color,
+                stream_code=stream_code,
+                dim_mode=dim_mode
+            )
         
-        # Apply config values if not explicitly provided
-        if theme == 'github-dark' and 'theme' in config:
-            theme = config.get('theme', theme)
-        if code_background == False:
-            code_background = config.get('code_background', code_background)
-        if line_numbers == True:
-            line_numbers = config.get('line_numbers', line_numbers)
-        if width is None:
-            width = config.get('width', width)
-        if force_color == False:
-            force_color = config.get('force_color', force_color)
-        if stream_code == True:
-            stream_code = config.get('stream_code', stream_code)
+        # Override config with explicitly passed arguments if they are not defaults
+        if theme != 'github-dark':
+            self.config.config['theme'] = theme
+        if code_background is not False:
+            self.config.config['code_background'] = code_background
+        if inline_code_color is not None:
+            self.config.config['inline_code_color'] = inline_code_color
+        if line_numbers is not True:
+            self.config.config['line_numbers'] = line_numbers
+        if width is not None:
+            self.config.config['width'] = width
+        if force_color is not False:
+            self.config.config['force_color'] = force_color
+        if stream_code is not True:
+            self.config.config['stream_code'] = stream_code
+        if dim_mode is not False:
+            self.config.config['dim_mode'] = dim_mode
         
-        self.theme_config = get_theme(theme)
-        self.code_background = code_background
-        self.line_numbers = line_numbers
-        self.width = width or get_terminal_width()
+        self.theme_config = get_theme(self.config.theme)
+        self.code_background = self.config.code_background
+        self.line_numbers = self.config.line_numbers
+        self.width = self.config.width or get_terminal_width()
         self.output = output or sys.stdout
-        self.force_color = force_color
-        self.stream_code = stream_code
+        self.force_color = self.config.force_color
+        self.stream_code = self.config.stream_code
+        self.dim_mode = self.config.dim_mode
         
         # Initialize parser and formatter
         self.parser = MarkdownParser()
         self.formatter = MarkdownFormatter(
             self.theme_config,
-            inline_code_color=inline_code_color,
-            code_background=code_background,
+            inline_code_color=self.config.inline_code_color,
+            code_background=self.code_background,
             width=self.width,
             force_color=self.force_color,
-            output=output
+            output=self.output,
+            dim_mode=self.dim_mode
         )
         
         # Buffer for incomplete content
@@ -135,54 +157,47 @@ class MarkdownRenderer:
         """Flush buffered list items with proper nesting support"""
         if not self.list_buffer:
             self.in_list = False
-            self.list_stack = []
             return
 
         # Sort and render list items with proper nesting
-        prev_indent = -1
-        counter = 1  # For ordered lists
+        # stack stores the indentation levels we've encountered
+        stack = [] # list of indentation levels
         
         for item in self.list_buffer:
             indent = item['indent']
             text = item['text']
             is_ordered = item['ordered']
             
-            if indent > prev_indent and prev_indent >= 0:
-                # Starting a nested list - push to stack
-                self.list_stack.append((indent, is_ordered, counter))
-                counter = 1
-            elif indent < prev_indent:
-                # Ending nested list(s) - pop from stack
-                while self.list_stack and self.list_stack[-1][0] >= indent:
-                    self.list_stack.pop()
-                if self.list_stack:
-                    counter = self.list_stack[-1][2] + 1
-                    self.list_stack[-1] = (self.list_stack[-1][0], self.list_stack[-1][1], counter)
-                else:
-                    counter = 1
+            # Find the level for this indentation
+            if not stack or indent > stack[-1]:
+                stack.append(indent)
+            else:
+                # Pop levels that are deeper than current indent
+                while len(stack) > 1 and stack[-1] > indent:
+                    stack.pop()
+                # If we're at a new indent that's not in the stack but less than top,
+                # we should technically handle it, but for now we'll just use the stack depth
+                if indent < stack[-1]:
+                     stack[-1] = indent
             
-            # Determine current list type from stack or current item
-            if self.list_stack:
-                is_ordered = self.list_stack[-1][1]
+            current_level = len(stack) - 1
             
-            # Format and write the list item
+            # Track counter for ordered lists at each level
+            # We'll use a simple approach: if it's the same level and same type as previous, increment
+            # This is handled by the formatter usually but we need to provide the correct number
+            
+            # For simplicity, we'll let the formatter handle the bullet cycling based on level
             formatted_text = self.parser.apply_inline_formatting(text, self.formatter)
             formatted = self.formatter.format_list_item(
                 formatted_text, 
                 ordered=is_ordered, 
-                number=counter if is_ordered else 1, 
-                indent_level=indent
+                number=item.get('number', 1), 
+                indent_level=current_level
             )
             self._write(formatted + '\n')
-            
-            if is_ordered:
-                counter += 1
-            
-            prev_indent = indent
 
         self.list_buffer = []
         self.in_list = False
-        self.list_stack = []
 
     def render(self, chunk):
         """
@@ -283,20 +298,36 @@ class MarkdownRenderer:
         """Process a single line of markdown"""
         stripped = line.rstrip()
 
+        # Check if it's a list item first to avoid premature flushing
+        ordered_item = self.parser.parse_ordered_list_item(stripped)
+        unordered_item = self.parser.parse_list_item(stripped)
+        is_list_item = ordered_item is not None or unordered_item is not None
+
         # If the line is a block-level element, flush the paragraph buffer.
         is_block = (
             self.parser.is_hr(stripped) or
             self.parser.parse_heading(stripped) or
             self.parser.parse_code_block_delimiter(stripped) is not None or
-            self.parser.parse_table_row(stripped) is not None or # This needs to be robust for detecting *start* of table
+            self.parser.parse_table_row(stripped) is not None or 
             self.parser.BLOCKQUOTE_PATTERN.match(line) or
             self.parser.parse_checkbox(stripped) or
-            self.parser.parse_ordered_list_item(stripped) or
-            self.parser.parse_list_item(stripped)
+            is_list_item
         )
 
         if is_block and not self.in_table:
             self._flush_paragraph_buffer()
+            
+        # If it's NOT a list item but we are in a list, flush the list buffer
+        if self.in_list and not is_list_item and not self.in_blockquote:
+             # Check for continuation before flushing
+             if stripped and line.startswith(' ' * 2) and not is_block:
+                  if self.list_buffer:
+                       self.list_buffer[-1]['text'] += ' ' + stripped
+                       return
+             
+             # Not a continuation, flush the list
+             if stripped or not self.finalizing: # Don't flush on empty line unless finalizing
+                  self._flush_list_buffer()
 
         # Code block handling
         if self.in_code_block:
@@ -305,6 +336,11 @@ class MarkdownRenderer:
                     # Render mermaid diagram
                     code = '\n'.join(self.code_buffer)
                     formatted = self.formatter.format_mermaid_diagram(code)
+                    self._write(formatted)
+                elif self.code_language in ('tree', 'file-tree'):
+                    # Render file tree
+                    code = '\n'.join(self.code_buffer)
+                    formatted = self.formatter.format_file_tree(code)
                     self._write(formatted)
                 elif not self.stream_code:
                     code = '\n'.join(self.code_buffer)
@@ -316,7 +352,7 @@ class MarkdownRenderer:
                 self.code_language = ''
                 self.code_buffer = []
             else:
-                if self.code_language == 'mermaid':
+                if self.code_language in ('mermaid', 'tree', 'file-tree'):
                     self.code_buffer.append(line)
                 elif self.stream_code:
                     self._write(self.formatter.stream_code_line(line, self.code_language, self.line_numbers))
@@ -331,8 +367,8 @@ class MarkdownRenderer:
                     self._flush_table()
                 self.in_code_block = True
                 self.code_language = lang
-                if lang == 'mermaid':
-                    # Mermaid diagrams are rendered as a whole at the end
+                if lang in ('mermaid', 'tree', 'file-tree'):
+                    # These blocks are rendered as a whole at the end
                     self.code_buffer = []
                 elif self.stream_code:
                     self._write(self.formatter.start_code_block(self.code_language, self.line_numbers))
@@ -493,7 +529,6 @@ class MarkdownRenderer:
             return
 
         # Ordered list
-        ordered_item = self.parser.parse_ordered_list_item(stripped)
         if ordered_item:
             if self.in_table:
                 self._flush_table()
@@ -501,26 +536,19 @@ class MarkdownRenderer:
             # Buffer the list item for nested processing
             if not self.in_list:
                 self.in_list = True
-            self.list_buffer.append({'indent': indent, 'text': text, 'ordered': True})
+            self.list_buffer.append({'indent': indent, 'text': text, 'ordered': True, 'number': number})
             return
-        elif self.in_list and not self.in_blockquote:
-            # End of list - flush buffer
-            self._flush_list_buffer()
 
         # Unordered list
-        list_item = self.parser.parse_list_item(stripped)
-        if list_item:
+        if unordered_item:
             if self.in_table:
                 self._flush_table()
-            indent, text = list_item
+            indent, text, marker = unordered_item
             # Buffer the list item for nested processing
             if not self.in_list:
                 self.in_list = True
-            self.list_buffer.append({'indent': indent, 'text': text, 'ordered': False})
+            self.list_buffer.append({'indent': indent, 'text': text, 'ordered': False, 'marker': marker})
             return
-        elif self.in_list and not self.in_blockquote:
-            # End of list - flush buffer
-            self._flush_list_buffer()
         
         # Regular text
         if stripped:
@@ -590,7 +618,9 @@ class MarkdownRenderer:
                 if isinstance(text, str):
                     # Ensure UTF-8 safe encoding
                     text = text.encode('utf-8', errors='replace').decode('utf-8')
-                self.formatter.console.print(text, end='')
+                
+                # Use overflow='fold' to prevent word cutting and ensure robust wrapping
+                self.formatter.console.print(text, end='', overflow='fold')
             except Exception as e:
                 # Fallback: try to print without formatting
                 try:

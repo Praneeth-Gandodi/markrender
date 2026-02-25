@@ -25,7 +25,40 @@ DEFAULT_CONFIG = {
     'width': None,
     'force_color': False,
     'stream_code': True,
+    'inline_code_color': None,
+    'dim_mode': False,
 }
+
+
+class RendererConfig:
+    """
+    Configuration for MarkdownRenderer.
+    Encapsulates all rendering settings.
+    """
+    def __init__(self, **kwargs):
+        # Start with defaults
+        self.config = DEFAULT_CONFIG.copy()
+        
+        # Merge with provided kwargs
+        for key, value in kwargs.items():
+            if key in self.config:
+                self.config[key] = value
+            elif hasattr(self, key):
+                setattr(self, key, value)
+
+    @classmethod
+    def from_file(cls, config_path: Optional[Path] = None):
+        """Create config from a file"""
+        file_config = load_config(config_path)
+        return cls(**file_config)
+
+    def get(self, key, default=None):
+        return self.config.get(key, default)
+
+    def __getattr__(self, name):
+        if name in self.config:
+            return self.config[name]
+        raise AttributeError(f"'RendererConfig' object has no attribute '{name}'")
 
 
 def find_config_file() -> Optional[Path]:

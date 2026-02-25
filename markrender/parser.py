@@ -29,10 +29,10 @@ class MarkdownParser:
     # Footnote definition: [^1]: content
     FOOTNOTE_DEF_PATTERN = re.compile(r'^\[\^([^\]]+)\]:\s*(.+)$', re.MULTILINE)
     EMOJI_PATTERN = re.compile(r':([a-z0-9_+-]+):')
-    CHECKBOX_PATTERN = re.compile(r'^(\s*)-\s+\[([ xX])\]\s+(.+)$', re.MULTILINE)
-    PROGRESS_CHECKBOX_PATTERN = re.compile(r'^(\s*)-\s+\[(\d{1,3})%\]\s*(.*)$', re.MULTILINE)
-    LIST_ITEM_PATTERN = re.compile(r'^(\s*)[-*•]\s+(.+)$', re.MULTILINE)
-    ORDERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)\.\s+(.+)$', re.MULTILINE)
+    CHECKBOX_PATTERN = re.compile(r'^(\s*)[-*•]\s+\[([ xX])\]\s+(.+)$', re.MULTILINE)
+    PROGRESS_CHECKBOX_PATTERN = re.compile(r'^(\s*)[-*•]\s+\[(\d{1,3})%\]\s*(.*)$', re.MULTILINE)
+    LIST_ITEM_PATTERN = re.compile(r'^(\s*)([-*•])\s+(.+)$', re.MULTILINE)
+    ORDERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)[.)]\s+(.+)$', re.MULTILINE)
     # Definition list: Term : Definition (requires space before and after colon, no emoji patterns)
     DEFINITION_LIST_PATTERN = re.compile(r'^([A-Za-z][^\s:].*?)\s{2,}:\s{2,}(.+)$')
     BLOCKQUOTE_PATTERN = re.compile(r'^((?:>\s?)+)(.*)$', re.MULTILINE)
@@ -291,13 +291,14 @@ class MarkdownParser:
             line: Line to parse
         
         Returns:
-            Tuple of (indent_level, text) or None
+            Tuple of (indent_level, text, marker) or None
         """
         match = self.LIST_ITEM_PATTERN.match(line)
         if match:
-            indent = len(match.group(1)) // 2
-            text = match.group(2)
-            return (indent, text)
+            indent = len(match.group(1))
+            marker = match.group(2)
+            text = match.group(3)
+            return (indent, text, marker)
         return None
     
     def parse_ordered_list_item(self, line):
@@ -312,7 +313,7 @@ class MarkdownParser:
         """
         match = self.ORDERED_LIST_PATTERN.match(line)
         if match:
-            indent = len(match.group(1)) // 2
+            indent = len(match.group(1))
             number = int(match.group(2))
             text = match.group(3)
             return (indent, number, text)

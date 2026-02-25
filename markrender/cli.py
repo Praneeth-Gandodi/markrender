@@ -78,8 +78,7 @@ Examples:
     parser.add_argument(
         'file',
         nargs='?',
-        type=argparse.FileType('r', encoding='utf-8'),
-        default=sys.stdin,
+        default=None,
         help='Markdown file to render (default: stdin)'
     )
 
@@ -136,7 +135,7 @@ Examples:
     parser.add_argument(
         '-v', '--version',
         action='version',
-        version='%(prog)s 1.0.6'
+        version='%(prog)s 1.0.7'
     )
 
     args = parser.parse_args()
@@ -164,8 +163,27 @@ Examples:
             stream_code=not args.no_stream_code
         )
 
-        # Read and render input
-        content = args.file.read()
+        # Read input content
+        if args.file is None:
+            content = sys.stdin.read()
+        else:
+            file_path = Path(args.file)
+            if not file_path.exists():
+                print(f"Error: File not found: {file_path}", file=sys.stderr)
+                return 1
+            
+            try:
+                # Try reading as UTF-8
+                content = file_path.read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+                # Try reading with latin-1 as fallback if it's not binary
+                try:
+                    content = file_path.read_text(encoding='latin-1')
+                    print(f"Warning: File {file_path} is not UTF-8 encoded. Using latin-1 fallback.", file=sys.stderr)
+                except Exception:
+                    print(f"Error: Could not read file {file_path}. It might be a binary file.", file=sys.stderr)
+                    return 1
+
         renderer.render(content)
         renderer.finalize()
 
@@ -181,12 +199,10 @@ Examples:
         print("\nInterrupted", file=sys.stderr)
         return 130
     except Exception as e:
+        import traceback
+        # print(traceback.format_exc()) # For debugging
         print(f"Error: {e}", file=sys.stderr)
         return 1
-    finally:
-        # Close file if not stdin
-        if args.file is not sys.stdin:
-            args.file.close()
 
 
 if __name__ == '__main__':

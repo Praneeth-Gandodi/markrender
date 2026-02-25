@@ -1,4 +1,3 @@
-
 import pytest
 from markrender import MarkdownRenderer
 import io
@@ -22,7 +21,7 @@ def test_callout_rendering(renderer_output):
     
     val = output.getvalue()
     # Check for Note icon/text
-    assert "ℹ️ NOTE" in val or "NOTE" in val
+    assert "NOTE" in val
     # Check for color (blue-ish for note usually, but just check content for now)
     assert "This is a note" in val
     assert "With multiple lines" in val
@@ -43,16 +42,13 @@ def test_nested_blockquotes(renderer_output):
 
 def test_nested_lists(renderer_output):
     renderer, output = renderer_output
-    renderer.render("- Item 1\n")
-    renderer.render("  - Item 1.1\n")
-    renderer.render("    - Item 1.1.1\n")
+    renderer.render("- Item 1\n  - Item 1.1\n    - Item 1.1.1\n")
     renderer.finalize()
-    
+
     val = strip_ansi(output.getvalue())
-    assert "• Item 1" in val
-    # Check indentation
-    assert "  • Item 1.1" in val
-    assert "    • Item 1.1.1" in val
+    assert "● Item 1" in val
+    assert "  ○ Item 1.1" in val
+    assert "    ■ Item 1.1.1" in val
 
 def test_robust_table_flushing(renderer_output):
     renderer, output = renderer_output

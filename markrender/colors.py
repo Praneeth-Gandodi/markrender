@@ -9,6 +9,42 @@ import colorama
 
 colorama.init()
 
+def supports_truecolor():
+    """
+    Check if the terminal supports TrueColor (24-bit).
+    """
+    if os.environ.get('COLORTERM') in ('truecolor', '24bit'):
+        return True
+    
+    # Check TERM for common truecolor terminals
+    term = os.environ.get('TERM', '')
+    if any(x in term for x in ('iterm', 'iterm2', 'alacritty', 'kitty', 'konsole')):
+        return True
+    
+    # VS Code terminal
+    if os.environ.get('TERM_PROGRAM') == 'vscode':
+        return True
+        
+    return False
+
+def get_color_system():
+    """
+    Determine the supported color system.
+    Returns: "truecolor", "256", "standard" (16), or None (no color)
+    """
+    if not sys.stdout.isatty() and not os.environ.get('FORCE_COLOR'):
+        return None
+        
+    if supports_truecolor():
+        return "truecolor"
+    
+    # Check for 256 color support
+    term = os.environ.get('TERM', '')
+    if '256color' in term:
+        return "256"
+        
+    return "standard"
+
 # Define common rich styles based on ANSI codes
 # Rich understands these string representations directly
 RICH_STYLES = {

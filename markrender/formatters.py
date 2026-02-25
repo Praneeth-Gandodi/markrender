@@ -13,20 +13,28 @@ try:
 except ImportError:
     emoji_lib = None
 
-# Imports for Rich library
-from rich.table import Table
-from rich.console import Console, Group
-from rich.text import Text
-from rich.ansi import AnsiDecoder
-from io import StringIO
-rich_available = True # Assuming rich is installed based on pyproject.toml
+try:
+    from rich.table import Table
+    from rich.console import Console, Group
+    from rich.text import Text
+    from rich.ansi import AnsiDecoder
+    from rich.tree import Tree
+    rich_available = True
+except ImportError:
+    Table = None
+    Console = None
+    Group = None
+    Text = None
+    AnsiDecoder = None
+    Tree = None
+    rich_available = False
 
-from .colors import Colors, get_terminal_width, get_rich_color_style, colorize, rgb
+from .colors import Colors, get_terminal_width, get_rich_color_style, colorize, rgb, get_color_system
 
 
 class MarkdownFormatter:
     """Formats markdown elements for terminal output"""
-    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None, force_color=False, output=None):
+    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None, force_color=False, output=None, dim_mode=False):
             """
             Initialize formatter
 
@@ -37,12 +45,14 @@ class MarkdownFormatter:
                 width: Terminal width (auto-detect if None)
                 force_color: Force color output (bypasses terminal capability check)
                 output: Output file object (to determine if we should force colors)
+                dim_mode: Enable dim mode (dimmed text, reduced colors)
             """
             self.theme = theme_config
             self.inline_code_color = inline_code_color or theme_config['inline_code']
             self.code_background = code_background
             self.width = width or get_terminal_width()
             self.force_color = force_color
+            self.dim_mode = dim_mode
             self._line_counter = 0
             
             # Determine if we should force terminal features based on output
@@ -54,21 +64,36 @@ class MarkdownFormatter:
                 should_force_terminal = output.isatty() or self.force_color
             
             if rich_available:
-                # Force color system to truecolor to ensure RGB colors are used
+                # Detect supported color system
+                color_system = get_color_system()
+                if self.force_color:
+                    color_system = "truecolor"
+                
                 # Only use StringIO if an output file is provided, otherwise use default (stdout)
                 console_kwargs = {
                     'width': self.width,
                     'force_terminal': should_force_terminal,
-                    'color_system': "truecolor"  # Force truecolor support to ensure RGB codes
+                    'color_system': color_system,
+                    'soft_wrap': False,
+                    'tab_size': 4
                 }
                 if output:
                     console_kwargs['file'] = output
                 
-                self.console = Console(**console_kwargs) # Keep force_terminal as it's a useful override
+                self.console = Console(**console_kwargs)
                 self.ansi_decoder = AnsiDecoder()
             else:
                 self.console = None
                 self.ansi_decoder = None
+
+    def _apply_dim(self, style):
+        """Helper to apply dimming to a style if dim_mode is enabled"""
+        if not self.dim_mode:
+            return style
+        if not style:
+            return "dim"
+        # If it's a hex or rgb color, we might want to just prefix it with dim
+        return f"dim {style}"
     def start_code_block(self, language='', line_numbers=True):
         self._line_counter = 0
         from rich.text import Text
@@ -80,7 +105,6 @@ class MarkdownFormatter:
 
     def stream_code_line(self, line, language='', line_numbers=True):
         self._line_counter += 1
-        num_width = len(str(self._line_counter))
         
         # Get lexer for single line highlighting, fallback to TextLexer
         try:
@@ -91,7 +115,11 @@ class MarkdownFormatter:
         except ClassNotFound:
             lexer = TextLexer()
         
-        formatter = TerminalTrueColorFormatter(style=self.theme.get('pygments_style', 'monokai'))
+        if self.dim_mode:
+             # Use 256 color formatter with a simpler style for dim mode
+             formatter = Terminal256Formatter(style='default')
+        else:
+             formatter = TerminalTrueColorFormatter(style=self.theme.get('pygments_style', 'monokai'))
         
         # Preserve leading whitespace for indentation
         leading_whitespace = ''
@@ -104,13 +132,19 @@ class MarkdownFormatter:
         
         # Convert Pygments ANSI output to rich.Text
         highlighted_rich_text = Text.from_ansi(highlighted_ansi)
+        if self.dim_mode:
+            highlighted_rich_text.stylize("dim")
         
         # Combine leading whitespace with highlighted content
-        full_line = Text(leading_whitespace) + Text.from_ansi(highlighted_ansi)
+        full_line = Text(leading_whitespace) + highlighted_rich_text
 
         if line_numbers:
-            line_num_text = Text(f'{self._line_counter:>{num_width}}', style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            if self.code_background:
+            line_num_style = self._apply_dim(get_rich_color_style(Colors.BRIGHT_BLACK))
+            # Use a fixed width (minimum 3) for streaming to avoid layout shifts
+            # It will automatically expand if the line count exceeds 3 digits
+            num_width = max(3, len(str(self._line_counter)))
+            line_num_text = Text(f'{self._line_counter:>{num_width}}', style=line_num_style)
+            if self.code_background and not self.dim_mode:
                 # Need to apply background to the line number Text object
                 line_num_text.stylize(get_rich_color_style(Colors.BG_BRIGHT_BLACK))
                 return Text.assemble(line_num_text, " ", full_line, "\n")
@@ -136,7 +170,7 @@ class MarkdownFormatter:
         """
         level = max(1, min(6, level))  # Clamp to 1-6
         color_code = self.theme['heading_colors'].get(level, Colors.WHITE)
-        rich_style = get_rich_color_style(color_code)
+        rich_style = self._apply_dim(get_rich_color_style(color_code))
         
         if isinstance(text, str):
             rich_text = Text(text)
@@ -147,7 +181,7 @@ class MarkdownFormatter:
         
         # Different symbols for different heading levels
         if level <= 2:
-            rich_text.stylize(get_rich_color_style(Colors.BOLD))
+            rich_text.stylize(self._apply_dim(get_rich_color_style(Colors.BOLD)))
             return Text.assemble("\n", rich_text, "\n")
         else:
             return Text.assemble("\n", rich_text, "\n")
@@ -174,23 +208,30 @@ class MarkdownFormatter:
             lexer = TextLexer()
         
         # Format code with pygments to ANSI
-        formatter = TerminalTrueColorFormatter(style=self.theme.get('pygments_style', 'monokai'))
+        if self.dim_mode:
+            formatter = Terminal256Formatter(style='default')
+        else:
+            formatter = TerminalTrueColorFormatter(style=self.theme.get('pygments_style', 'monokai'))
+            
         highlighted_ansi = highlight(code, lexer, formatter).rstrip()
         
         # Convert ANSI to rich.Text
         highlighted_rich_text = Text.from_ansi(highlighted_ansi)
+        if self.dim_mode:
+            highlighted_rich_text.stylize("dim")
         
         # Add line numbers if requested
         if line_numbers:
             lines = highlighted_rich_text.split('\n')
             max_line_num = len(lines)
-            num_width = len(str(max_line_num))
+            num_width = max(3, len(str(max_line_num)))
             
             formatted_rich_lines = Text()
             for i, rich_line in enumerate(lines, 1):
-                line_num_text = Text(f'{i:>{num_width}}', style=get_rich_color_style(Colors.BRIGHT_BLACK))
+                line_num_style = self._apply_dim(get_rich_color_style(Colors.BRIGHT_BLACK))
+                line_num_text = Text(f'{i:>{num_width}}', style=line_num_style)
                 # Add background if requested
-                if self.code_background:
+                if self.code_background and not self.dim_mode:
                     line_num_text.stylize(get_rich_color_style(Colors.BG_BRIGHT_BLACK))
                     formatted_rich_lines.append(Text.assemble(line_num_text, " ", rich_line, "\n"))
                 else:
@@ -207,8 +248,71 @@ class MarkdownFormatter:
         """
         Format inline code by returning a rich Text object.
         """
-        style = get_rich_color_style(self.inline_code_color)
+        style = self._apply_dim(get_rich_color_style(self.inline_code_color))
         return Text(text, style=style)
+
+    def format_file_tree(self, tree_data: str) -> Group:
+        """
+        Format a file tree from string representation.
+        
+        Args:
+            tree_data: String representation of a file tree
+            
+        Returns:
+            Rich object representing the tree
+        """
+        if not rich_available or not Tree:
+            return Text(tree_data)
+
+        lines = tree_data.strip().split('\n')
+        if not lines:
+            return Text("")
+
+        # Extract root
+        root_name = lines[0].strip()
+        tree = Tree(root_name, guide_style=self._apply_dim("bright_black"))
+
+        # Map to keep track of nodes at different indentation levels
+        # level -> node
+        nodes = {0: tree}
+        
+        for line in lines[1:]:
+            # Determine level based on characters like │, ├, └ or spaces
+            # This is a heuristic for common tree outputs
+            stripped = line.lstrip(' │├└─')
+            indent = len(line) - len(stripped)
+            level = indent // 4 + 1 # Assuming 4 spaces per level heuristic
+            
+            # More robust level detection for │   ├─ style
+            level = 0
+            for char in line:
+                if char in '│├└ ':
+                    level += 1
+                else:
+                    break
+            level = (level // 4) + 1
+            
+            # Find parent node
+            parent_level = level - 1
+            while parent_level >= 0 and parent_level not in nodes:
+                parent_level -= 1
+            
+            if parent_level >= 0:
+                parent_node = nodes[parent_level]
+                
+                # Determine icon
+                icon = "📄"
+                style = "white"
+                if "." not in stripped: # Likely a directory
+                    icon = "📁"
+                    style = "blue"
+                
+                style = self._apply_dim(style)
+                label = Text.assemble((f"{icon} ", style), (stripped, style))
+                new_node = parent_node.add(label)
+                nodes[level] = new_node
+
+        return Group(Text("\n"), tree, Text("\n"))
     
 
     def format_table(self, header, data_rows):
@@ -236,26 +340,32 @@ class MarkdownFormatter:
         if border_color_code and isinstance(border_color_code, str):
              # Try to convert if it's ANSI
              rich_border_color = get_rich_color_style(border_color_code)
-             table_border_style = rich_border_color if rich_border_color else "none"
+             table_border_style = self._apply_dim(rich_border_color if rich_border_color else "none")
         else:
-             table_border_style = "none"
+             table_border_style = self._apply_dim("none")
 
         # table_header is now an ANSI color code, convert to rich style
         header_color_code = self.theme.get('table_header')
         if header_color_code:
             rich_header_color = get_rich_color_style(header_color_code)
-            header_style = f"bold {rich_header_color}" if rich_header_color else "bold magenta"
+            header_style = self._apply_dim(f"bold {rich_header_color}" if rich_header_color else "bold magenta")
         else:
-            header_style = "bold magenta"
+            header_style = self._apply_dim("bold magenta")
 
         table = Table(show_header=True, header_style=header_style, border_style=table_border_style, padding=(0, 1))
 
         # Add columns
         for col_title in header:
+            if self.dim_mode and isinstance(col_title, Text):
+                 col_title.stylize("dim")
             table.add_column(col_title)
 
         # Add data rows with empty rows between for spacing
         for i, row_data in enumerate(data_rows):
+            if self.dim_mode:
+                for cell in row_data:
+                    if isinstance(cell, Text):
+                        cell.stylize("dim")
             table.add_row(*row_data)
             # Add an empty row after each data row except the last one to create spacing
             if i < len(data_rows) - 1:
@@ -272,16 +382,24 @@ class MarkdownFormatter:
         Format list item (bullet or numbered)
         """
         indent = Text('  ' * indent_level)
-        marker_style = get_rich_color_style(self.theme.get('list_marker', Colors.BRIGHT_BLUE))
+        marker_color = self.theme.get('list_marker', Colors.BRIGHT_BLUE)
+        marker_style = self._apply_dim(get_rich_color_style(marker_color))
+        
         if ordered:
             marker = Text(f'{number}.', style=marker_style)
         else:
-            marker = Text('•', style=marker_style)
+            # Cycle through different bullet types for levels
+            bullets = ['●', '○', '■', '▫']
+            bullet = bullets[indent_level % len(bullets)]
+            marker = Text(bullet, style=marker_style)
         
         if isinstance(text, str):
             text_obj = Text.from_markup(text)
         else:
             text_obj = text
+            
+        if self.dim_mode:
+            text_obj.stylize("dim")
             
         return Text.assemble(indent, marker, " ", text_obj)
     
@@ -290,11 +408,17 @@ class MarkdownFormatter:
         Format checkbox (task list item)
         """
         if checked:
-            box = Text('✅', style=get_rich_color_style(self.theme['checkbox_checked']))
+            box_style = self._apply_dim(get_rich_color_style(self.theme['checkbox_checked']))
+            box = Text('✅', style=box_style)
         else:
-            box = Text('⬜', style=get_rich_color_style(self.theme['checkbox_unchecked']))
+            box_style = self._apply_dim(get_rich_color_style(self.theme['checkbox_unchecked']))
+            box = Text('⬜', style=box_style)
 
-        return Text.assemble(box, "  ", Text.from_markup(text) if isinstance(text, str) else text)
+        text_obj = Text.from_markup(text) if isinstance(text, str) else text
+        if self.dim_mode:
+            text_obj.stylize("dim")
+            
+        return Text.assemble(box, "  ", text_obj)
 
     def format_progress_bar(self, percentage: int, text: Text, indent_level: int = 0) -> Text:
         """
@@ -316,7 +440,10 @@ class MarkdownFormatter:
         empty = bar_width - filled
         
         # Color based on progress
-        if percentage >= 100:
+        if self.dim_mode:
+            bar_color = "white"
+            status_icon = '•'
+        elif percentage >= 100:
             bar_color = self.theme.get('checkbox_checked', Colors.GREEN)
             status_icon = '✅'
         elif percentage >= 75:
@@ -338,15 +465,20 @@ class MarkdownFormatter:
         
         # Assemble the final text
         result = Text(indent)
-        result.append(f'{status_icon} [', style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append(bar, style=get_rich_color_style(bar_color))
-        result.append(f'] {percentage_str}', style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        result.append(f'{status_icon} [', style=self._apply_dim(get_rich_color_style(Colors.BRIGHT_BLACK)))
+        result.append(bar, style=self._apply_dim(get_rich_color_style(bar_color)))
+        result.append(f'] {percentage_str}', style=self._apply_dim(get_rich_color_style(Colors.BRIGHT_BLACK)))
         result.append(' ')
         
         if isinstance(text, Text):
-            result.append(text)
+            text_obj = text
         else:
-            result.append(Text(str(text)))
+            text_obj = Text(str(text))
+            
+        if self.dim_mode:
+            text_obj.stylize("dim")
+            
+        result.append(text_obj)
         
         return result
     
@@ -385,7 +517,11 @@ class MarkdownFormatter:
                 "EXAMPLE": rgb(107, 114, 128),   # Gray
                 "QUOTE": rgb(107, 114, 128),     # Gray
             }
-            type_color = callout_colors.get(callout_type, rgb(107, 114, 128))
+            
+            if self.dim_mode:
+                type_color = "white" # Simple color for dim mode
+            else:
+                type_color = callout_colors.get(callout_type, rgb(107, 114, 128))
 
             # Title case for display
             type_display = callout_type.capitalize()
@@ -396,22 +532,30 @@ class MarkdownFormatter:
             # Indentation for the block itself
             indent_str = '  ' * max(0, base_nesting_level - 1)
 
-            # Top border with color
+            # Styles
+            border_style = self._apply_dim(get_rich_color_style(type_color))
+            header_text_style = self._apply_dim(get_rich_color_style(type_color) + " bold")
+
+            # Top border
             header_bar = Text.assemble(
                 Text(indent_str),
-                Text("┌", style=get_rich_color_style(type_color)),
-                Text("─" * 6, style=get_rich_color_style(type_color)),
-                Text(f" {type_display} ", style=get_rich_color_style(type_color) + " bold"),
-                Text("─" * 40, style=get_rich_color_style(type_color)),
-                Text("┐", style=get_rich_color_style(type_color)),
+                Text("┌", style=border_style),
+                Text("─" * 6, style=border_style),
+                Text(f" {type_display} ", style=header_text_style),
+                Text("─" * 40, style=border_style),
+                Text("┐", style=border_style),
             )
             assembled_lines.append(header_bar)
 
             # First line content
             if message_first_line:
+                content_text = Text.from_markup(message_first_line) if isinstance(message_first_line, str) else Text(str(message_first_line))
+                if self.dim_mode:
+                    content_text.stylize("dim")
+                    
                 first_line_text = Text.assemble(
-                    Text(indent_str + "│  "),
-                    Text.from_markup(message_first_line) if isinstance(message_first_line, str) else Text(str(message_first_line))
+                    Text(indent_str + "│  ", style=border_style),
+                    content_text
                 )
                 assembled_lines.append(first_line_text)
 
@@ -426,9 +570,12 @@ class MarkdownFormatter:
                 else:
                     content_text = Text.from_markup(line_content.strip()) if isinstance(line_content, str) else Text(str(line_content))
 
+                if self.dim_mode:
+                    content_text.stylize("dim")
+                    
                 line_text = Text.assemble(
                     Text(current_indent),
-                    Text("│  "),
+                    Text("│  ", style=border_style),
                     content_text
                 )
                 assembled_lines.append(line_text)
@@ -436,9 +583,9 @@ class MarkdownFormatter:
             # Bottom border
             footer_bar = Text.assemble(
                 Text(indent_str),
-                Text("└", style=get_rich_color_style(type_color)),
-                Text("─" * (56 + len(type_display)), style=get_rich_color_style(type_color)),
-                Text("┘", style=get_rich_color_style(type_color)),
+                Text("└", style=border_style),
+                Text("─" * (56 + len(type_display)), style=border_style),
+                Text("┘", style=border_style),
             )
             assembled_lines.append(footer_bar)
 
@@ -447,7 +594,7 @@ class MarkdownFormatter:
         # Standard Blockquote Rendering with Nesting Support
         assembled_text = Text()
         border_char = '│'
-        border_style = get_rich_color_style(self.theme['blockquote_border'])
+        border_style = self._apply_dim(get_rich_color_style(self.theme['blockquote_border']))
 
         for i, (line_str, line_level) in enumerate(lines_data):
             # For each nesting level, add a border char and space
@@ -462,6 +609,9 @@ class MarkdownFormatter:
             else:
                 content = Text.from_markup(line_str) if isinstance(line_str, str) else Text(str(line_str))
 
+            if self.dim_mode:
+                content.stylize("dim")
+                
             assembled_text.append(Text.assemble(prefix, content))
 
             if i < len(lines_data) - 1:
@@ -471,7 +621,7 @@ class MarkdownFormatter:
     
     def format_link(self, text: str, url: str) -> Text:
         """
-        Format link with enhanced visual styling.
+        Format link with enhanced visual styling and OSC 8 support.
         
         Args:
             text: Link text
@@ -496,12 +646,31 @@ class MarkdownFormatter:
             icon = "🔓"  # Non-secure link
         
         # Create styled link text
-        link_style = get_rich_color_style(self.theme.get('link', Colors.BLUE)) + " underline"
+        link_color = self.theme.get('link', Colors.BLUE)
+        link_style = get_rich_color_style(link_color)
         
+        # If in dim mode, we use a much simpler style
+        if self.dim_mode:
+            result = Text()
+            result.append(text, style="dim underline")
+            # Apply OSC 8 link to the text if possible
+            result.stylize(f"link {url}")
+            result.append(f" ({url})", style="dim")
+            return result
+            
         result = Text()
         result.append(f"{icon} ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-        result.append(text, style=link_style)
-        result.append(f" ({url})", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        
+        # Create the clickable part
+        link_text = Text(text, style=f"{link_style} underline")
+        link_text.stylize(f"link {url}")
+        result.append(link_text)
+        
+        # Add a nice tooltip-like URL if it's not too long
+        if len(url) < 50:
+             result.append(f" ({url})", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+        else:
+             result.append(f" ({url[:47]}...)", style=get_rich_color_style(Colors.BRIGHT_BLACK))
         
         return result
     
@@ -511,7 +680,8 @@ class MarkdownFormatter:
         """
         width = min(self.width, 80)
         line = '─' * width
-        return Text.assemble("\n", Text(line, style=get_rich_color_style(self.theme['hr'])), "\n")
+        style = self._apply_dim(get_rich_color_style(self.theme['hr']))
+        return Text.assemble("\n", Text(line, style=style), "\n")
     
     def format_emoji(self, emoji_code: str) -> Text:
         """
@@ -750,25 +920,37 @@ class MarkdownFormatter:
         result = Text()
         
         # Parse the mermaid code to extract nodes and edges
-        nodes, edges, graph_type = self._parse_mermaid(code)
+        try:
+            nodes, edges, graph_type = self._parse_mermaid(code)
+        except Exception:
+            # Fallback for parsing errors
+            nodes, edges, graph_type = {}, [], 'TD'
         
         if not nodes:
+            # Better fallback for empty or unparseable diagrams
+            title_style = self._apply_dim(get_rich_color_style(Colors.BOLD))
+            border_style = self._apply_dim(get_rich_color_style(Colors.BRIGHT_BLACK))
+            
             result.append("\n")
-            result.append("┌", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("┐\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("│", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append(" Mermaid Diagram ".center(50), style=get_rich_color_style(Colors.BOLD))
-            result.append("│\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("├", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("┤\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("│", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("  (No diagram content)".ljust(50), style=get_rich_color_style(Colors.WHITE))
-            result.append("│\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("└", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("─" * 50, style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("┘\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("┌" + "─" * 50 + "┐\n", style=border_style)
+            result.append("│", style=border_style)
+            result.append(" Mermaid Diagram ".center(50), style=title_style)
+            result.append("│\n", style=border_style)
+            result.append("├" + "─" * 50 + "┤\n", style=border_style)
+            
+            # Show original code as fallback if it's small enough
+            code_lines = code.strip().split('\n')
+            if len(code_lines) < 10:
+                for line in code_lines:
+                    result.append("│ ", style=border_style)
+                    result.append(line.ljust(48), style=self._apply_dim("white"))
+                    result.append(" │\n", style=border_style)
+            else:
+                result.append("│", style=border_style)
+                result.append("  (Diagram too complex for terminal rendering)  ".center(50), style=self._apply_dim("white"))
+                result.append("│\n", style=border_style)
+                
+            result.append("└" + "─" * 50 + "┘\n", style=border_style)
             return result
         
         # Calculate layout based on graph type
@@ -778,42 +960,79 @@ class MarkdownFormatter:
         else:
             # Vertical layout (TD, TB, BT)
             return self._render_vertical_mermaid(nodes, edges, result)
-    
+
     def _render_vertical_mermaid(self, nodes, edges, result: Text) -> Text:
         """Render mermaid diagram in vertical layout"""
         node_list = list(nodes.items())
-        edge_map = {e[0]: e[1] for e in edges}
+        # Multi-edge support
+        edge_map = {}
+        for start, end in edges:
+            if start not in edge_map:
+                edge_map[start] = []
+            edge_map[start].append(end)
+        
+        border_style = self._apply_dim(get_rich_color_style(Colors.BRIGHT_BLACK))
+        text_style = self._apply_dim(get_rich_color_style(Colors.WHITE))
         
         for i, (node_id, label) in enumerate(node_list):
             # Node box
             box_width = max(len(label) + 4, 14)
-            result.append("┌" + "─" * box_width + "┐\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-            result.append("│ " + label.center(box_width - 2) + " │\n", style=get_rich_color_style(Colors.WHITE))
-            result.append("└" + "─" * box_width + "┘\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            result.append("┌" + "─" * box_width + "┐\n", style=border_style)
+            result.append("│ ", style=border_style)
+            result.append(label.center(box_width - 2), style=text_style)
+            result.append(" │\n", style=border_style)
+            result.append("└" + "─" * box_width + "┘\n", style=border_style)
             
-            # Edge to next node
-            if node_id in edge_map or i < len(node_list) - 1:
-                result.append("    │\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-                result.append("    ▼\n", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            # Edges from this node
+            if node_id in edge_map:
+                targets = edge_map[node_id]
+                for j, target in enumerate(targets):
+                    # Find target index to see if it's the next one
+                    target_idx = -1
+                    for idx, (nid, _) in enumerate(node_list):
+                        if nid == target:
+                            target_idx = idx
+                            break
+                    
+                    if target_idx == i + 1:
+                        # Direct connection to next
+                        result.append("    │\n", style=border_style)
+                        result.append("    ▼\n", style=border_style)
+                    else:
+                        # Jump connection
+                        target_label = nodes.get(target, target)
+                        result.append(f"    │ ➔ {target_label}\n", style=border_style)
+            elif i < len(node_list) - 1:
+                # Default flow if no edges defined but multiple nodes
+                result.append("    │\n", style=border_style)
+                result.append("    ▼\n", style=border_style)
         
         return result
     
     def _render_horizontal_mermaid(self, nodes, edges, result: Text) -> Text:
         """Render mermaid diagram in horizontal layout"""
         node_list = list(nodes.items())
-        edge_map = {e[0]: e[1] for e in edges}
+        # Multi-edge support
+        edge_map = {}
+        for start, end in edges:
+            if start not in edge_map:
+                edge_map[start] = []
+            edge_map[start].append(end)
+        
+        border_style = self._apply_dim(get_rich_color_style(Colors.BRIGHT_BLACK))
+        text_style = self._apply_dim(get_rich_color_style(Colors.WHITE))
         
         # Build single line
         line = Text()
         for i, (node_id, label) in enumerate(node_list):
             # Node box
             box_width = max(len(label) + 4, 12)
-            line.append("┌" + "─" * box_width + "┐", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            line.append("┌" + "─" * box_width + "┐", style=border_style)
             
             if i < len(node_list) - 1:
-                line.append("─", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-                line.append("▶", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-                line.append("─", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+                line.append("─", style=border_style)
+                line.append("▶", style=border_style)
+                line.append("─", style=border_style)
         
         result.append("\n")
         result.append(line)
@@ -823,11 +1042,11 @@ class MarkdownFormatter:
         label_line = Text()
         for node_id, label in node_list:
             box_width = max(len(label) + 4, 12)
-            label_line.append("│ " + label.center(box_width - 2) + " │", style=get_rich_color_style(Colors.WHITE))
+            label_line.append("│ ", style=border_style)
+            label_line.append(label.center(box_width - 2), style=text_style)
+            label_line.append(" │", style=border_style)
             if node_id in edge_map:
-                label_line.append(" ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-                label_line.append(" ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
-                label_line.append(" ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+                label_line.append("   ", style=border_style)
         
         result.append(label_line)
         result.append("\n")
@@ -836,9 +1055,9 @@ class MarkdownFormatter:
         border_line = Text()
         for i, (node_id, label) in enumerate(node_list):
             box_width = max(len(label) + 4, 12)
-            border_line.append("└" + "─" * box_width + "┘", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+            border_line.append("└" + "─" * box_width + "┘", style=border_style)
             if i < len(node_list) - 1:
-                border_line.append("   ", style=get_rich_color_style(Colors.BRIGHT_BLACK))
+                border_line.append("   ", style=border_style)
         
         result.append(border_line)
         result.append("\n")

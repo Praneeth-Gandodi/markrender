@@ -7,8 +7,12 @@ MarkRender is a Python library for rendering Markdown in the terminal. It is des
 - **Streaming Support**: MarkRender can process and render Markdown content as it arrives, providing a smooth and responsive experience for dynamic content.
 - **Syntax Highlighting**: Code blocks are highlighted using the powerful Pygments library, supporting a wide range of languages.
 - **Theming**: Choose from a variety of built-in themes to customize the appearance of your rendered output.
-- **Table Rendering**: Tables are rendered with proper formatting and alignment, powered by the `rich` library.
+- **Table Rendering**: Tables are rendered with proper formatting, automatic alignment, and terminal-width awareness, powered by the `rich` library.
 - **Advanced Markdown Support**: Highlights, footnotes, definition lists, progress bars, nested lists, and image placeholders.
+- **Terminal Capabilities Detection**: Automatic detection of TrueColor support with graceful fallback for older terminals.
+- **Dim Mode (Thinking Mode)**: A specialized mode for rendering background thoughts or LLM processes with reduced visual prominence.
+- **File Tree Rendering**: Visualize directory structures with the `tree` or `file-tree` code blocks.
+- **OSC 8 Hyperlinks**: Clickable hyperlinks in supported modern terminals.
 - **CLI Interface**: Render markdown files directly from the command line.
 - **Configuration**: Support for TOML configuration files.
 - **Cross-Platform**: Works on Windows, macOS, and Linux.

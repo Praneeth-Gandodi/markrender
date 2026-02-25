@@ -58,10 +58,10 @@ class TestMarkdownParser:
     def test_parse_list_item(self):
         """Test parsing unordered list item"""
         result = self.parser.parse_list_item("- Item")
-        assert result == (0, "Item")
+        assert result == (0, "Item", "-")
         
         result = self.parser.parse_list_item("  - Nested")
-        assert result == (1, "Nested")
+        assert result == (2, "Nested", "-")
     
     def test_parse_ordered_list_item(self):
         """Test parsing ordered list item"""
@@ -69,7 +69,7 @@ class TestMarkdownParser:
         assert result == (0, 1, "First")
         
         result = self.parser.parse_ordered_list_item("  2. Nested")
-        assert result == (1, 2, "Nested")
+        assert result == (2, 2, "Nested")
     
     def test_parse_blockquote(self):
         """Test parsing blockquote"""
