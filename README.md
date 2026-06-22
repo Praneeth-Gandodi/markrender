@@ -4,6 +4,9 @@
 
 MarkRender is a production-ready Python library that beautifully renders markdown in terminals, specifically designed for streaming LLM responses. It provides syntax highlighting, multiple color themes, and supports all essential markdown features without flickering or performance issues.
 
+> [!IMPORTANT]
+> This project is currently in **active development**. While it is designed for production-ready environments, we are continuously iterating to improve performance and stability.
+
 ## ✨ Features
 
 - 🎯 **Streaming Support** - Designed for chunk-by-chunk LLM response rendering
