@@ -22,9 +22,17 @@ SYNTAX_THEMES = {
         'link': rgb(88, 166, 255),
         'blockquote_border': Colors.BRIGHT_BLACK,
         'table_border': Colors.BRIGHT_BLACK,
+        'table_header': rgb(88, 166, 255),
         'checkbox_unchecked': Colors.BRIGHT_BLACK,
         'checkbox_checked': rgb(46, 160, 67),  # Green
         'hr': Colors.BRIGHT_BLACK,
+        'alert_colors': {
+            'NOTE': rgb(88, 166, 255),
+            'TIP': rgb(46, 160, 67),
+            'IMPORTANT': rgb(174, 129, 255),
+            'WARNING': rgb(187, 128, 9),
+            'CAUTION': rgb(248, 81, 73),
+        },
     },
     'monokai': {
         'name': 'monokai',
@@ -41,9 +49,17 @@ SYNTAX_THEMES = {
         'link': rgb(102, 217, 239),
         'blockquote_border': rgb(117, 113, 94),
         'table_border': rgb(117, 113, 94),
+        'table_header': rgb(249, 38, 114),
         'checkbox_unchecked': rgb(117, 113, 94),
         'checkbox_checked': rgb(166, 226, 46),
         'hr': rgb(117, 113, 94),
+        'alert_colors': {
+            'NOTE': rgb(102, 217, 239),
+            'TIP': rgb(166, 226, 46),
+            'IMPORTANT': rgb(174, 129, 255),
+            'WARNING': rgb(253, 151, 31),
+            'CAUTION': rgb(249, 38, 114),
+        },
     },
     'dracula': {
         'name': 'dracula',
@@ -60,9 +76,17 @@ SYNTAX_THEMES = {
         'link': rgb(139, 233, 253),
         'blockquote_border': rgb(98, 114, 164),
         'table_border': rgb(98, 114, 164),
+        'table_header': rgb(255, 121, 198),
         'checkbox_unchecked': rgb(98, 114, 164),
         'checkbox_checked': rgb(80, 250, 123),
         'hr': rgb(98, 114, 164),
+        'alert_colors': {
+            'NOTE': rgb(139, 233, 253),
+            'TIP': rgb(80, 250, 123),
+            'IMPORTANT': rgb(189, 147, 249),
+            'WARNING': rgb(255, 184, 108),
+            'CAUTION': rgb(255, 121, 198),
+        },
     },
     'nord': {
         'name': 'nord',
@@ -79,9 +103,17 @@ SYNTAX_THEMES = {
         'link': rgb(136, 192, 208),
         'blockquote_border': rgb(76, 86, 106),
         'table_border': rgb(76, 86, 106),
+        'table_header': rgb(136, 192, 208),
         'checkbox_unchecked': rgb(76, 86, 106),
         'checkbox_checked': rgb(163, 190, 140),
         'hr': rgb(76, 86, 106),
+        'alert_colors': {
+            'NOTE': rgb(136, 192, 208),
+            'TIP': rgb(163, 190, 140),
+            'IMPORTANT': rgb(180, 142, 173),
+            'WARNING': rgb(191, 97, 106),
+            'CAUTION': rgb(191, 97, 106),
+        },
     },
     'one-dark': {
         'name': 'one-dark',
@@ -98,9 +130,17 @@ SYNTAX_THEMES = {
         'link': rgb(97, 175, 239),
         'blockquote_border': rgb(92, 99, 112),
         'table_border': rgb(92, 99, 112),
+        'table_header': rgb(97, 175, 239),
         'checkbox_unchecked': rgb(92, 99, 112),
         'checkbox_checked': rgb(152, 195, 121),
         'hr': rgb(92, 99, 112),
+        'alert_colors': {
+            'NOTE': rgb(97, 175, 239),
+            'TIP': rgb(152, 195, 121),
+            'IMPORTANT': rgb(198, 120, 221),
+            'WARNING': rgb(209, 154, 102),
+            'CAUTION': rgb(224, 108, 117),
+        },
     },
     'solarized-dark': {
         'name': 'solarized-dark',
@@ -117,25 +157,41 @@ SYNTAX_THEMES = {
         'link': rgb(38, 139, 210),
         'blockquote_border': rgb(88, 110, 117),
         'table_border': rgb(88, 110, 117),
+        'table_header': rgb(38, 139, 210),
         'checkbox_unchecked': rgb(88, 110, 117),
         'checkbox_checked': rgb(133, 153, 0),
         'hr': rgb(88, 110, 117),
+        'alert_colors': {
+            'NOTE': rgb(38, 139, 210),
+            'TIP': rgb(133, 153, 0),
+            'IMPORTANT': rgb(108, 113, 196),
+            'WARNING': rgb(181, 137, 0),
+            'CAUTION': rgb(203, 75, 22),
+        },
     },
     'solarized-light': {
         'name': 'solarized-light',
         'pygments_style': 'solarized-light',
+        'alert_colors': {
+            'NOTE': rgb(38, 139, 210),
+            'TIP': rgb(133, 153, 0),
+            'IMPORTANT': rgb(108, 113, 196),
+            'WARNING': rgb(181, 137, 0),
+            'CAUTION': rgb(203, 75, 22),
+        },
         'heading_colors': {
-            1: rgb(38, 139, 210),   # Blue
-            2: rgb(42, 161, 152),   # Cyan
-            3: rgb(133, 153, 0),    # Green
-            4: rgb(181, 137, 0),    # Yellow
-            5: rgb(203, 75, 22),    # Orange
-            6: rgb(211, 54, 130),   # Magenta
+            1: rgb(38, 139, 210),
+            2: rgb(42, 161, 152),
+            3: rgb(133, 153, 0),
+            4: rgb(181, 137, 0),
+            5: rgb(203, 75, 22),
+            6: rgb(211, 54, 130),
         },
         'inline_code': rgb(108, 113, 196),
         'link': rgb(38, 139, 210),
         'blockquote_border': rgb(147, 161, 161),
         'table_border': rgb(147, 161, 161),
+        'table_header': rgb(38, 139, 210),
         'checkbox_unchecked': rgb(147, 161, 161),
         'checkbox_checked': rgb(133, 153, 0),
         'hr': rgb(147, 161, 161),

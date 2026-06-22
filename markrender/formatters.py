@@ -7,7 +7,6 @@ import re
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name, TextLexer
 from pygments.formatters import Terminal256Formatter
-from pygments.util import ClassNotFound
 try:
     import emoji as emoji_lib
 except ImportError:
@@ -74,13 +73,12 @@ class MarkdownFormatter:
         Returns:
             Formatted code block string
         """
-        # Get lexer
         try:
             if language:
                 lexer = get_lexer_by_name(language, stripall=True)
             else:
                 lexer = TextLexer()
-        except ClassNotFound:
+        except Exception:
             lexer = TextLexer()
         
         # Format code with pygments
@@ -154,6 +152,7 @@ class MarkdownFormatter:
         
         # Format rows
         border_color = self.theme['table_border']
+        header_color = self.theme.get('table_header')
         formatted = []
         
         for row_idx, row in enumerate(normalized_rows):
@@ -162,12 +161,14 @@ class MarkdownFormatter:
             for i, cell in enumerate(row):
                 clean_cell = re.sub(r'\033\[[0-9;]*m', '', str(cell))
                 padding = col_widths[i] - len(clean_cell)
-                padded.append(str(cell) + ' ' * padding)
+                cell_str = str(cell) + ' ' * padding
+                if row_idx == 0 and header_color:
+                    cell_str = colorize(cell_str, header_color + Colors.BOLD)
+                padded.append(cell_str)
             
             # Create row
-            row_str = colorize('│', border_color) + colorize(' ', border_color).join(
-                f' {cell} ' for cell in padded
-            ) + colorize('│', border_color)
+            cells_formatted = [f' {cell} ' for cell in padded]
+            row_str = colorize('│', border_color) + colorize('│', border_color).join(cells_formatted) + colorize('│', border_color)
             formatted.append(row_str)
             
             # Add separator after header (first row)
@@ -222,23 +223,23 @@ class MarkdownFormatter:
         else:
             box = colorize('☐', self.theme['checkbox_unchecked'])
         
-        return f'{box} {text}'
+        return f'{box}  {text}'
     
     def format_blockquote(self, text):
-        """
-        Format blockquote with border
-        
-        Args:
-            text: Blockquote text
-        
-        Returns:
-            Formatted blockquote string
-        """
         border = colorize('│', self.theme['blockquote_border'])
         lines = text.split('\n')
         formatted = [f'{border} {line}' for line in lines]
         return '\n' + '\n'.join(formatted) + '\n'
-    
+
+    def format_alert(self, alert_type, text):
+        alert_colors = self.theme.get('alert_colors', {})
+        color = alert_colors.get(alert_type, Colors.BRIGHT_BLACK)
+        label = colorize(f' {alert_type} ', color + Colors.BOLD)
+        border = colorize('│', color)
+        lines = text.split('\n')
+        formatted = [f'{border} {line}' for line in lines]
+        return '\n' + label + '\n' + '\n'.join(formatted) + '\n'
+
     def format_link(self, text, url):
         """
         Format link with colored text and URL
@@ -261,10 +262,37 @@ class MarkdownFormatter:
         Returns:
             Formatted horizontal rule string
         """
-        width = min(self.width, 80)
-        line = '─' * width
+        line = '─' * self.width
         return '\n' + colorize(line, self.theme['hr']) + '\n'
     
+    def format_image(self, alt_text, url):
+        """
+        Format image as styled alt text with URL
+        
+        Args:
+            alt_text: Image alt text
+            url: Image URL
+        
+        Returns:
+            Formatted image string
+        """
+        img_color = self.theme.get('link', Colors.BRIGHT_CYAN)
+        colored_alt = colorize(f'[{alt_text}]', img_color + Colors.ITALIC)
+        return f'{colored_alt}({colorize(url, Colors.DIM)})'
+
+    def format_code_line(self, line, language):
+        """Format a single code line for streaming with per-line syntax highlighting"""
+        try:
+            if language:
+                lexer = get_lexer_by_name(language, stripall=False)
+            else:
+                lexer = TextLexer()
+            formatter = Terminal256Formatter(style=self.theme.get('pygments_style', 'monokai'))
+            highlighted = highlight(line, lexer, formatter).rstrip('\n')
+        except Exception:
+            highlighted = line
+        return highlighted
+
     def format_emoji(self, emoji_code):
         """
         Convert emoji code to emoji character

@@ -36,6 +36,16 @@ dev = [
     "pytest-cov>=2.10.0",
 ]
 
+[project.scripts]
+markrender = "markrender.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "streaming: tests for streaming edge cases",
+    "colors: tests for color utilities",
+]
+
 [project.urls]
 Homepage = "https://github.com/Praneeth-Gandodi/markrender"
 Documentation = "https://github.com/Praneeth-Gandodi/markrender#readme"

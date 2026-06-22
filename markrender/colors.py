@@ -129,14 +129,16 @@ def supports_color():
             kernel32 = ctypes.windll.kernel32
             # Get console mode
             mode = ctypes.c_ulong()
-            kernel32.GetConsoleMode(kernel32.GetStdHandle(-11), ctypes.byref(mode))
+            if not kernel32.GetConsoleMode(kernel32.GetStdHandle(-11), ctypes.byref(mode)):
+                return False
             # Enable virtual terminal processing (0x0004)
             mode.value |= 0x0004
-            kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), mode.value)
+            if not kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), mode.value):
+                return False
             return True
         except Exception:
             # Fallback: check for Windows Terminal or other modern terminals
-            return os.environ.get('WT_SESSION') or os.environ.get('TERM_PROGRAM')
+            return bool(os.environ.get('WT_SESSION') or os.environ.get('TERM_PROGRAM'))
     
     # Unix-like systems
     return True
