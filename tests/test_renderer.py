@@ -16,8 +16,8 @@ class TestMarkdownRenderer:
         """Test renderer initialization with defaults"""
         renderer = MarkdownRenderer()
         assert renderer.theme_config is not None
-        assert renderer.code_background == False
-        assert renderer.line_numbers == True
+        assert not renderer.code_background
+        assert renderer.line_numbers
 
     def test_initialization_custom_theme(self):
         """Test renderer initialization with custom theme"""
