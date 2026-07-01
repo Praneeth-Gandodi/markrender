@@ -1,2 +1,2 @@
 pygments>=2.7.0
-emoji>=1.6.0
+emoji>=2.8.0
