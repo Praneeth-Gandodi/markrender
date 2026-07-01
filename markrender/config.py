@@ -27,7 +27,6 @@ DEFAULT_CONFIG = {
     'force_color': False,
     'stream_code': True,
     'inline_code_color': None,
-    'dim_mode': False,
 }
 
 
@@ -128,7 +127,11 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
         
         # Handle theme configuration
         if 'theme' in file_config:
-            config['theme'] = file_config['theme']
+            theme_val = file_config['theme']
+            if isinstance(theme_val, dict):
+                config['theme'] = theme_val.get('name', DEFAULT_CONFIG['theme'])
+            else:
+                config['theme'] = theme_val
         
         # Handle output configuration
         if 'output' in file_config:
