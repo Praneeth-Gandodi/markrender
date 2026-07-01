@@ -2,7 +2,6 @@
 Tests for MarkdownParser
 """
 
-import pytest
 from markrender.parser import MarkdownParser
 from markrender.formatters import MarkdownFormatter
 from markrender.themes import get_theme
