@@ -2,9 +2,8 @@
 Tests for color utilities
 """
 
-import pytest
 from markrender.colors import (
-    Colors, rgb, rgb_bg, hex_to_rgb, colorize, supports_color, get_terminal_width
+    Colors, rgb, rgb_bg, hex_to_rgb, colorize, get_terminal_width
 )
 
 
