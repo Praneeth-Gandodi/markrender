@@ -64,6 +64,7 @@ Thumbs.db
 
 # Project specific
 *.log
+.ruff_cache/
 
 
 # test files
