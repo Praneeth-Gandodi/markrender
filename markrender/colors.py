@@ -3,8 +3,30 @@ ANSI color utilities for terminal output
 Python 3.7+ compatible
 """
 
-import os
+import re
 import sys
+
+
+_force_color = False
+_dim_mode = False
+
+
+def set_force_color(val):
+    global _force_color
+    _force_color = val
+
+
+def set_dim_mode(val):
+    global _dim_mode
+    _dim_mode = val
+
+
+def get_force_color():
+    return _force_color
+
+
+def get_dim_mode():
+    return _dim_mode
 
 
 class Colors:
@@ -89,58 +111,51 @@ def hex_to_rgb(hex_color):
     
     Returns:
         Tuple of (r, g, b) values
+    
+    Raises:
+        ValueError: If hex_color is not a valid hex color string
+        TypeError: If hex_color is not a string
     """
+    if not isinstance(hex_color, str):
+        raise TypeError(f'Expected str, got {type(hex_color).__name__}')
     hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    if len(hex_color) != 6:
+        raise ValueError(f'Invalid hex color: {hex_color!r}')
+    try:
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    except ValueError:
+        raise ValueError(f'Invalid hex color: {hex_color!r}')
 
 
-def colorize(text, color_code):
-    """
-    Apply color to text
-    
-    Args:
-        text: Text to colorize
-        color_code: ANSI color code
-    
-    Returns:
-        Colorized text with reset at the end
-    """
-    if not supports_color():
+def colorize(text, color_code, force_color=None, dim_mode=None):
+    if not supports_color(force_color=force_color):
         return text
-    return f'{color_code}{text}{Colors.RESET}'
+    _dim = dim_mode if dim_mode is not None else _dim_mode
+    prefix = Colors.DIM + color_code if _dim else color_code
+    return f'{prefix}{text}{Colors.RESET}'
 
 
-def supports_color():
-    """
-    Check if terminal supports color output
-    
-    Returns:
-        True if colors are supported, False otherwise
-    """
-    # Check if output is redirected
+def supports_color(force_color=None):
+    fc = force_color if force_color is not None else _force_color
+    if fc:
+        return True
     if not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty():
         return False
-    
-    # Windows color support
     if sys.platform == 'win32':
-        # Enable virtual terminal processing on Windows 10+
         try:
             import ctypes
             kernel32 = ctypes.windll.kernel32
-            # Get console mode
             mode = ctypes.c_ulong()
-            if not kernel32.GetConsoleMode(kernel32.GetStdHandle(-11), ctypes.byref(mode)):
+            handle = kernel32.GetStdHandle(-11)
+            if handle == 0 or handle == -1:
                 return False
-            # Enable virtual terminal processing (0x0004)
+            if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                return False
             mode.value |= 0x0004
-            if not kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), mode.value):
-                return False
+            kernel32.SetConsoleMode(handle, mode.value)
             return True
         except Exception:
-            # Fallback: check for Windows Terminal or other modern terminals
-            return bool(os.environ.get('WT_SESSION') or os.environ.get('TERM_PROGRAM'))
-    
-    # Unix-like systems
+            return False
     return True
 
 
@@ -156,3 +171,21 @@ def get_terminal_width():
         return shutil.get_terminal_size().columns
     except Exception:
         return 80
+
+
+_ANSI_PATTERN = re.compile(r'\033\[[0-9;]*[a-zA-Z]|\033\][0-9;]*[a-zA-Z].*?(\033\\|[\a])|[\x80-\x9f]')
+
+
+def strip_ansi(text):
+    """
+    Remove ANSI escape sequences from text to prevent terminal injection.
+    
+    Args:
+        text: Input text possibly containing ANSI escape codes
+    
+    Returns:
+        Text with ANSI escape sequences stripped
+    """
+    if not isinstance(text, str):
+        return text
+    return _ANSI_PATTERN.sub('', text)
