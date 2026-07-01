@@ -131,7 +131,10 @@ def colorize(text, color_code, force_color=None, dim_mode=None):
     if not supports_color(force_color=force_color):
         return text
     _dim = dim_mode if dim_mode is not None else _dim_mode
-    prefix = Colors.DIM + color_code if _dim else color_code
+    if _dim:
+        prefix = Colors.BRIGHT_BLACK + Colors.DIM
+    else:
+        prefix = color_code
     return f'{prefix}{text}{Colors.RESET}'
 
 
