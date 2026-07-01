@@ -18,7 +18,7 @@ from .colors import colorize, Colors, get_terminal_width
 class MarkdownFormatter:
     """Formats markdown elements for terminal output"""
     
-    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None):
+    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None, force_color=False, dim_mode=False):
         """
         Initialize formatter
         
@@ -27,11 +27,19 @@ class MarkdownFormatter:
             inline_code_color: Custom color for inline code (default from theme)
             code_background: Whether to show background in code blocks
             width: Terminal width (auto-detect if None)
+            force_color: Whether to force color output
+            dim_mode: Whether to use dim mode
         """
         self.theme = theme_config
         self.inline_code_color = inline_code_color or theme_config['inline_code']
         self.code_background = code_background
         self.width = width or get_terminal_width()
+        self.force_color = force_color
+        self.dim_mode = dim_mode
+
+    def _colorize(self, text, color_code):
+        """Wrap colorize with instance-level force_color and dim_mode settings"""
+        return colorize(text, color_code, force_color=self.force_color, dim_mode=self.dim_mode)
     
     def format_heading(self, level, text):
         """
@@ -50,15 +58,15 @@ class MarkdownFormatter:
         # Different symbols for different heading levels
         if level == 1:
             marker = '# '
-            text = colorize(f'{marker}{text}', color + Colors.BOLD)
+            text = self._colorize(f'{marker}{text}', color + Colors.BOLD)
             return f'\n{text}\n'
         elif level == 2:
             marker = '## '
-            text = colorize(f'{marker}{text}', color + Colors.BOLD)
+            text = self._colorize(f'{marker}{text}', color + Colors.BOLD)
             return f'\n{text}\n'
         else:
             marker = '#' * level + ' '
-            text = colorize(f'{marker}{text}', color)
+            text = self._colorize(f'{marker}{text}', color)
             return f'\n{text}\n'
     
     def format_code_block(self, code, language='', line_numbers=True):
@@ -75,14 +83,17 @@ class MarkdownFormatter:
         """
         try:
             if language:
-                lexer = get_lexer_by_name(language, stripall=True)
+                lexer = get_lexer_by_name(language, stripall=False)
             else:
                 lexer = TextLexer()
         except Exception:
             lexer = TextLexer()
         
         # Format code with pygments
-        formatter = Terminal256Formatter(style=self.theme.get('pygments_style', 'monokai'))
+        try:
+            formatter = Terminal256Formatter(style=self.theme.get('pygments_style', 'monokai'))
+        except Exception:
+            formatter = Terminal256Formatter(style='monokai')
         highlighted = highlight(code, lexer, formatter).rstrip()
         
         # Add line numbers if requested
@@ -93,7 +104,7 @@ class MarkdownFormatter:
             
             formatted_lines = []
             for i, line in enumerate(lines, 1):
-                line_num = colorize(f'{i:>{num_width}}', Colors.BRIGHT_BLACK)
+                line_num = self._colorize(f'{i:>{num_width}}', Colors.BRIGHT_BLACK)
                 # Add background if requested
                 if self.code_background:
                     formatted_lines.append(f'{Colors.BG_BRIGHT_BLACK} {line_num} {Colors.RESET} {line}')
@@ -117,73 +128,74 @@ class MarkdownFormatter:
         Returns:
             Formatted inline code string
         """
-        return colorize(f'`{text}`', self.inline_code_color)
+        return self._colorize(f'`{text}`', self.inline_code_color)
     
     def format_table(self, rows):
-        """
-        Format markdown table with borders
-        
-        Args:
-            rows: List of lists representing table rows
-        
-        Returns:
-            Formatted table string
-        """
         if not rows:
             return ''
-        
-        # Determine the maximum number of columns across all rows
+
         max_cols = max(len(row) for row in rows)
-        
-        # Normalize all rows to have the same number of columns
+
         normalized_rows = []
         for row in rows:
-            # Pad row with empty strings if it has fewer columns
             normalized_row = list(row) + [''] * (max_cols - len(row))
             normalized_rows.append(normalized_row)
-        
-        # Calculate column widths
+
         col_widths = [0] * max_cols
         for row in normalized_rows:
             for i, cell in enumerate(row):
-                # Strip ANSI codes for width calculation
                 clean_cell = re.sub(r'\033\[[0-9;]*m', '', str(cell))
                 col_widths[i] = max(col_widths[i], len(clean_cell))
-        
-        # Format rows
+
+        total_border_chars = max_cols * 3 + 1
+        total_table_width = sum(col_widths) + total_border_chars
+        max_width = self.width - 2
+
+        if total_table_width > max_width:
+            available = max_width - total_border_chars
+            widths_sum = sum(col_widths)
+            if available < max_cols:
+                col_widths = [max(1, available // max_cols)] * max_cols
+            else:
+                for i in range(max_cols):
+                    col_widths[i] = max(1, col_widths[i] * available // widths_sum)
+
         border_color = self.theme['table_border']
         header_color = self.theme.get('table_header')
         formatted = []
-        
+
         for row_idx, row in enumerate(normalized_rows):
-            # Pad cells
             padded = []
             for i, cell in enumerate(row):
                 clean_cell = re.sub(r'\033\[[0-9;]*m', '', str(cell))
-                padding = col_widths[i] - len(clean_cell)
-                cell_str = str(cell) + ' ' * padding
-                if row_idx == 0 and header_color:
-                    cell_str = colorize(cell_str, header_color + Colors.BOLD)
+                if len(clean_cell) > col_widths[i]:
+                    cell_str = clean_cell[:col_widths[i] - 1] + '…'
+                    if row_idx == 0 and header_color:
+                        cell_str = self._colorize(cell_str, header_color + Colors.BOLD)
+                else:
+                    cell_str = str(cell)
+                    padding = col_widths[i] - len(clean_cell)
+                    if padding:
+                        cell_str = cell_str + ' ' * padding
+                    if row_idx == 0 and header_color:
+                        cell_str = self._colorize(cell_str, header_color + Colors.BOLD)
                 padded.append(cell_str)
-            
-            # Create row
+
             cells_formatted = [f' {cell} ' for cell in padded]
-            row_str = colorize('│', border_color) + colorize('│', border_color).join(cells_formatted) + colorize('│', border_color)
+            row_str = self._colorize('│', border_color) + self._colorize('│', border_color).join(cells_formatted) + self._colorize('│', border_color)
             formatted.append(row_str)
-            
-            # Add separator after header (first row)
+
             if row_idx == 0:
                 sep_parts = []
-                for width in col_widths:
-                    sep_parts.append('─' * (width + 2))
-                sep = colorize('├' + '┼'.join(sep_parts) + '┤', border_color)
+                for w in col_widths:
+                    sep_parts.append('─' * (w + 2))
+                sep = self._colorize('├' + '┼'.join(sep_parts) + '┤', border_color)
                 formatted.append(sep)
-        
-        # Add top and bottom borders
+
         top_parts = ['─' * (w + 2) for w in col_widths]
-        top = colorize('┌' + '┬'.join(top_parts) + '┐', border_color)
-        bottom = colorize('└' + '┴'.join(top_parts) + '┘', border_color)
-        
+        top = self._colorize('┌' + '┬'.join(top_parts) + '┐', border_color)
+        bottom = self._colorize('└' + '┴'.join(top_parts) + '┘', border_color)
+
         return '\n' + top + '\n' + '\n'.join(formatted) + '\n' + bottom + '\n'
     
     def format_list_item(self, text, ordered=False, number=1, indent_level=0):
@@ -201,9 +213,9 @@ class MarkdownFormatter:
         """
         indent = '  ' * indent_level
         if ordered:
-            marker = colorize(f'{number}.', Colors.BRIGHT_BLUE)
+            marker = self._colorize(f'{number}.', Colors.BRIGHT_BLUE)
         else:
-            marker = colorize('•', Colors.BRIGHT_BLUE)
+            marker = self._colorize('•', Colors.BRIGHT_BLUE)
         
         return f'{indent}{marker} {text}'
     
@@ -219,14 +231,14 @@ class MarkdownFormatter:
             Formatted checkbox string
         """
         if checked:
-            box = colorize('☑', self.theme['checkbox_checked'])
+            box = self._colorize('☑', self.theme['checkbox_checked'])
         else:
-            box = colorize('☐', self.theme['checkbox_unchecked'])
+            box = self._colorize('☐', self.theme['checkbox_unchecked'])
         
         return f'{box}  {text}'
     
     def format_blockquote(self, text):
-        border = colorize('│', self.theme['blockquote_border'])
+        border = self._colorize('│', self.theme['blockquote_border'])
         lines = text.split('\n')
         formatted = [f'{border} {line}' for line in lines]
         return '\n' + '\n'.join(formatted) + '\n'
@@ -234,8 +246,10 @@ class MarkdownFormatter:
     def format_alert(self, alert_type, text):
         alert_colors = self.theme.get('alert_colors', {})
         color = alert_colors.get(alert_type, Colors.BRIGHT_BLACK)
-        label = colorize(f' {alert_type} ', color + Colors.BOLD)
-        border = colorize('│', color)
+        label = self._colorize(f' {alert_type} ', color + Colors.BOLD)
+        if not text:
+            return '\n' + label + '\n'
+        border = self._colorize('│', color)
         lines = text.split('\n')
         formatted = [f'{border} {line}' for line in lines]
         return '\n' + label + '\n' + '\n'.join(formatted) + '\n'
@@ -252,18 +266,12 @@ class MarkdownFormatter:
             Formatted link string
         """
         link_color = self.theme['link']
-        colored_text = colorize(text, link_color + Colors.UNDERLINE)
-        return f'{colored_text} ({colorize(url, Colors.DIM)})'
+        colored_text = self._colorize(text, link_color + Colors.UNDERLINE)
+        return f'{colored_text} ({self._colorize(url, Colors.DIM)})'
     
     def format_hr(self):
-        """
-        Format horizontal rule
-        
-        Returns:
-            Formatted horizontal rule string
-        """
         line = '─' * self.width
-        return '\n' + colorize(line, self.theme['hr']) + '\n'
+        return '\n' + self._colorize(line, self.theme['hr']) + '\n'
     
     def format_image(self, alt_text, url):
         """
@@ -277,8 +285,8 @@ class MarkdownFormatter:
             Formatted image string
         """
         img_color = self.theme.get('link', Colors.BRIGHT_CYAN)
-        colored_alt = colorize(f'[{alt_text}]', img_color + Colors.ITALIC)
-        return f'{colored_alt}({colorize(url, Colors.DIM)})'
+        colored_alt = self._colorize(f'[{alt_text}]', img_color + Colors.ITALIC)
+        return f'{colored_alt}({self._colorize(url, Colors.DIM)})'
 
     def format_code_line(self, line, language):
         """Format a single code line for streaming with per-line syntax highlighting"""
@@ -287,7 +295,10 @@ class MarkdownFormatter:
                 lexer = get_lexer_by_name(language, stripall=False)
             else:
                 lexer = TextLexer()
-            formatter = Terminal256Formatter(style=self.theme.get('pygments_style', 'monokai'))
+            try:
+                formatter = Terminal256Formatter(style=self.theme.get('pygments_style', 'monokai'))
+            except Exception:
+                formatter = Terminal256Formatter(style='monokai')
             highlighted = highlight(line, lexer, formatter).rstrip('\n')
         except Exception:
             highlighted = line
@@ -312,12 +323,12 @@ class MarkdownFormatter:
     
     def format_bold(self, text):
         """Format bold text"""
-        return colorize(text, Colors.BOLD)
+        return self._colorize(text, Colors.BOLD)
     
     def format_italic(self, text):
         """Format italic text"""
-        return colorize(text, Colors.ITALIC)
+        return self._colorize(text, Colors.ITALIC)
     
     def format_strikethrough(self, text):
         """Format strikethrough text"""
-        return colorize(text, Colors.DIM)
+        return self._colorize(text, Colors.DIM)
