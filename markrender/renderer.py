@@ -72,7 +72,6 @@ class MarkdownRenderer:
         output=None,
         stream_code=True,
         force_color=False,
-        dim_mode=False,
     ):
         self.theme_config = get_theme(theme)
         self.code_background = code_background
@@ -80,7 +79,6 @@ class MarkdownRenderer:
         self.stream_code = stream_code
         self.width = width or get_terminal_width()
         self.force_color = force_color
-        self.dim_mode = dim_mode
         self.output = output or self._get_utf8_output(sys.stdout)
 
         self.parser = MarkdownParser()
@@ -90,7 +88,6 @@ class MarkdownRenderer:
             code_background=code_background,
             width=self.width,
             force_color=force_color,
-            dim_mode=dim_mode,
         )
 
         self.buffer = ''
@@ -98,15 +95,19 @@ class MarkdownRenderer:
         self._last_element = None
         self._last_output_ended_with_newline = False
 
-    def render(self, chunk):
+    def render(self, chunk, dim_mode=False):
         """
         Render a chunk of markdown content
 
         Args:
             chunk: Markdown text chunk from streaming response
+            dim_mode: Enable dim/reduced color mode for this chunk
         """
         if chunk is None:
             return
+
+        self.formatter.dim_mode = dim_mode
+        self._dim_mode = dim_mode
 
         chunk = strip_ansi(chunk)
         self.buffer += chunk
@@ -284,6 +285,7 @@ class MarkdownRenderer:
             if formatted:
                 self._write(formatted, 'blockquote')
             self.state.reset_blockquote()
+            return
 
         if self.parser.is_hr(stripped):
             self._write(self.formatter.format_hr(), 'hr')
@@ -407,7 +409,7 @@ class MarkdownRenderer:
             w = len(str(num))
             if w > self.state.code_line_num_width:
                 self.state.code_line_num_width = w
-            formatted = colorize(f'{num:>{self.state.code_line_num_width}}', Colors.BRIGHT_BLACK, force_color=self.force_color, dim_mode=self.dim_mode)
+            formatted = colorize(f'{num:>{self.state.code_line_num_width}}', Colors.BRIGHT_BLACK, force_color=self.force_color, dim_mode=self._dim_mode)
             self._write(f' {formatted}  {highlighted}\n', 'code_block')
         else:
             self._write(f'  {highlighted}\n', 'code_block')
