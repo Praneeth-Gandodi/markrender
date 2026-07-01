@@ -2,6 +2,7 @@
 Theme definitions for syntax highlighting and markdown elements
 """
 
+import copy
 from .colors import rgb, Colors
 
 
@@ -215,7 +216,7 @@ def get_theme(theme_name):
     if theme_name not in SYNTAX_THEMES:
         available = ', '.join(SYNTAX_THEMES.keys())
         raise ValueError(f"Theme '{theme_name}' not found. Available themes: {available}")
-    return SYNTAX_THEMES[theme_name]
+    return copy.deepcopy(SYNTAX_THEMES[theme_name])
 
 
 def list_themes():
