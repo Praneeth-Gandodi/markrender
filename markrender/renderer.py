@@ -3,11 +3,11 @@ Main markdown renderer for streaming LLM responses
 """
 
 import sys
-import re
+from typing import Optional
 from .parser import MarkdownParser
 from .formatters import MarkdownFormatter
 from .themes import get_theme
-from .colors import get_terminal_width, colorize, Colors
+from .colors import get_terminal_width, colorize, Colors, strip_ansi
 
 
 class RenderState:
@@ -17,12 +17,13 @@ class RenderState:
         self.code_language = ''
         self.code_lines = []
         self.code_line_count = 0
+        self.code_line_num_width = 3
         self.in_table = False
         self.table_rows = []
         self.table_row_count = 0
         self.in_blockquote = False
         self.blockquote_lines = []
-        self.alert_type = None
+        self.alert_type: Optional[str] = None
 
     def reset_code(self):
         self.in_code_block = False
@@ -69,28 +70,17 @@ class MarkdownRenderer:
         line_numbers=True,
         width=None,
         output=None,
-        stream_code=True
+        stream_code=True,
+        force_color=False,
+        dim_mode=False,
     ):
-        """
-        Initialize markdown renderer
-
-        Args:
-            theme: Syntax highlighting theme name (default: 'github-dark')
-                   Available: github-dark, monokai, dracula, nord, one-dark,
-                              solarized-dark, solarized-light
-            code_background: Show background in code blocks (default: False)
-            inline_code_color: Custom ANSI color for inline code (default: theme default)
-            line_numbers: Show line numbers in code blocks (default: True)
-            width: Terminal width (default: auto-detect)
-            output: Output file object (default: sys.stdout)
-            stream_code: Render code lines as they arrive (default: True)
-                         When False, buffers entire code block until closing fence
-        """
         self.theme_config = get_theme(theme)
         self.code_background = code_background
         self.line_numbers = line_numbers
         self.stream_code = stream_code
         self.width = width or get_terminal_width()
+        self.force_color = force_color
+        self.dim_mode = dim_mode
         self.output = output or self._get_utf8_output(sys.stdout)
 
         self.parser = MarkdownParser()
@@ -98,7 +88,9 @@ class MarkdownRenderer:
             self.theme_config,
             inline_code_color=inline_code_color,
             code_background=code_background,
-            width=self.width
+            width=self.width,
+            force_color=force_color,
+            dim_mode=dim_mode,
         )
 
         self.buffer = ''
@@ -113,9 +105,10 @@ class MarkdownRenderer:
         Args:
             chunk: Markdown text chunk from streaming response
         """
-        if not chunk:
+        if chunk is None:
             return
 
+        chunk = strip_ansi(chunk)
         self.buffer += chunk
 
         if self.state.in_code_block:
@@ -135,9 +128,9 @@ class MarkdownRenderer:
         if '\n' not in self.buffer:
             return
 
+        ends_with_newline = self.buffer.endswith('\n')
         lines = self.buffer.split('\n')
-        has_trailing_newline = lines and lines[-1] == ''
-        if has_trailing_newline:
+        if ends_with_newline:
             lines = lines[:-1]
 
         closing_idx = -1
@@ -149,14 +142,14 @@ class MarkdownRenderer:
         if closing_idx >= 0:
             new_lines = lines[:closing_idx]
             if self.stream_code:
-                for l in new_lines:
-                    if l == '' and not self.state.code_lines:
+                for _line in new_lines:
+                    if _line == '' and not self.state.code_lines:
                         continue
                     self.state.code_line_count += 1
-                    self.state.code_lines.append(l)
-                    self._write_code_line(l)
+                    self.state.code_lines.append(_line)
+                    self._write_code_line(_line)
             else:
-                code_lines = [l for l in new_lines if l != '' or self.state.code_lines]
+                code_lines = [_line for _line in new_lines if _line != '' or self.state.code_lines]
                 all_code = '\n'.join(self.state.code_lines + code_lines)
                 formatted = self.formatter.format_code_block(
                     all_code,
@@ -166,42 +159,50 @@ class MarkdownRenderer:
                 self._write(formatted, 'code_block')
             self.state.reset_code()
             remaining_lines = lines[closing_idx + 1:]
-            suffix = '\n' if has_trailing_newline else ''
+            suffix = '\n' if ends_with_newline else ''
             self.buffer = '\n'.join(remaining_lines) + suffix
-            if remaining_lines or has_trailing_newline:
-                self.render('')
+            self._process_remaining_buffer()
         else:
             if self.stream_code:
-                for l in lines:
-                    if l == '' and not self.state.code_lines:
+                for _line in lines:
+                    if _line == '' and not self.state.code_lines:
                         continue
                     self.state.code_line_count += 1
-                    self.state.code_lines.append(l)
-                    self._write_code_line(l)
+                    self.state.code_lines.append(_line)
+                    self._write_code_line(_line)
                 self.buffer = ''
             else:
-                code_lines = [l for l in lines if l != '' or self.state.code_lines]
+                code_lines = [_line for _line in lines if _line != '' or self.state.code_lines]
                 self.state.code_lines.extend(code_lines)
                 self.buffer = ''
+
+    def _process_remaining_buffer(self):
+        if self.state.in_code_block:
+            self._handle_code_block_buffer()
+            return
+        if self.state.in_table:
+            self._handle_table_buffer()
+            if self.state.in_table:
+                return
+        while '\n' in self.buffer:
+            line, self.buffer = self.buffer.split('\n', 1)
+            self._process_line(line + '\n')
 
     def _handle_table_buffer(self):
         """Process buffer when inside a table"""
         if '\n' not in self.buffer:
             return
 
+        ends_with_newline = self.buffer.endswith('\n')
         lines = self.buffer.split('\n')
-        if lines and lines[-1] == '':
+        if ends_with_newline:
             lines = lines[:-1]
-            has_trailing_newline = True
-        else:
-            has_trailing_newline = False
 
         for i, line in enumerate(lines):
             stripped = line.rstrip()
             table_row = self.parser.parse_table_row(stripped)
             if table_row is not None:
-                self.state.table_row_count += 1
-                if not (self.state.table_row_count == 2 and self.parser.is_separator_row(table_row)):
+                if not self.parser.is_separator_row(table_row):
                     formatted_row = [self.parser.apply_inline_formatting(cell, self.formatter) for cell in table_row]
                     self.state.table_rows.append(formatted_row)
             else:
@@ -210,7 +211,7 @@ class MarkdownRenderer:
                     self._write(formatted, 'table')
                 self.state.reset_table()
                 remaining = lines[i:]
-                if has_trailing_newline:
+                if ends_with_newline:
                     remaining.append('')
                 self.buffer = '\n'.join(remaining)
                 return
@@ -253,9 +254,7 @@ class MarkdownRenderer:
             if not self.state.in_table:
                 self.state.in_table = True
                 self.state.table_rows = []
-                self.state.table_row_count = 0
-            self.state.table_row_count += 1
-            if not (self.state.table_row_count == 2 and self.parser.is_separator_row(table_row)):
+            if not self.parser.is_separator_row(table_row):
                 formatted_row = [self.parser.apply_inline_formatting(cell, self.formatter) for cell in table_row]
                 self.state.table_rows.append(formatted_row)
             return
@@ -387,7 +386,7 @@ class MarkdownRenderer:
         is_code_stream = element_type == 'code_block' and self._last_element == 'code_block'
         if is_code_stream:
             return
-        if self._last_element is not None and self._last_element != 'inline':
+        if self._last_element is not None and self._last_element != 'inline' and not self._last_output_ended_with_newline:
             self.output.write('\n')
         self._last_element = element_type
 
@@ -402,11 +401,13 @@ class MarkdownRenderer:
         self._last_output_ended_with_newline = text.endswith('\n')
 
     def _write_code_line(self, line):
-        """Write a single code line during streaming with per-line highlighting"""
         highlighted = self.formatter.format_code_line(line, self.state.code_language)
         if self.line_numbers:
             num = self.state.code_line_count
-            formatted = colorize(f'{num:>4}', Colors.BRIGHT_BLACK)
+            w = len(str(num))
+            if w > self.state.code_line_num_width:
+                self.state.code_line_num_width = w
+            formatted = colorize(f'{num:>{self.state.code_line_num_width}}', Colors.BRIGHT_BLACK, force_color=self.force_color, dim_mode=self.dim_mode)
             self._write(f' {formatted}  {highlighted}\n', 'code_block')
         else:
             self._write(f'  {highlighted}\n', 'code_block')
