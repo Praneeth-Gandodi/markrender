@@ -73,8 +73,8 @@ markrender/
 >     return "This code is also dimmed"
 > ```
 """
-    renderer = MarkdownRenderer(dim_mode=True)
-    renderer.render(dim_markdown)
+    renderer = MarkdownRenderer()
+    renderer.render(dim_markdown, dim_mode=True)
     renderer.finalize()
     print()
 
