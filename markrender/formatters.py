@@ -18,7 +18,7 @@ from .colors import colorize, Colors, get_terminal_width
 class MarkdownFormatter:
     """Formats markdown elements for terminal output"""
     
-    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None, force_color=False, dim_mode=False):
+    def __init__(self, theme_config, inline_code_color=None, code_background=False, width=None, force_color=False):
         """
         Initialize formatter
         
@@ -28,14 +28,13 @@ class MarkdownFormatter:
             code_background: Whether to show background in code blocks
             width: Terminal width (auto-detect if None)
             force_color: Whether to force color output
-            dim_mode: Whether to use dim mode
         """
         self.theme = theme_config
         self.inline_code_color = inline_code_color or theme_config['inline_code']
         self.code_background = code_background
         self.width = width or get_terminal_width()
         self.force_color = force_color
-        self.dim_mode = dim_mode
+        self.dim_mode = False
 
     def _colorize(self, text, color_code):
         """Wrap colorize with instance-level force_color and dim_mode settings"""
