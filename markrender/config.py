@@ -4,6 +4,7 @@ Supports TOML configuration files
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -45,6 +46,9 @@ class RendererConfig:
                 self.config[key] = value
             elif hasattr(self, key):
                 setattr(self, key, value)
+            else:
+                import warnings as _warnings
+                _warnings.warn(f"Unknown configuration key: {key!r}")
 
     @classmethod
     def from_file(cls, config_path: Optional[Path] = None):
@@ -141,11 +145,9 @@ def load_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
                 config['stream_code'] = features_config['stream_code']
         
     except (IOError, OSError) as e:
-        # Silently ignore file errors, use defaults
-        pass
+        print(f"Warning: Could not read config file {config_path}: {e}", file=sys.stderr)
     except Exception as e:
-        # Silently ignore parsing errors, use defaults
-        pass
+        print(f"Warning: Could not parse config file {config_path}: {e}", file=sys.stderr)
     
     return config
 
