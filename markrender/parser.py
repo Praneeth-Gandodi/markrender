@@ -4,6 +4,7 @@ Handles chunk-by-chunk markdown element detection
 """
 
 import re
+from .colors import strip_ansi
 
 
 class MarkdownParser:
@@ -11,18 +12,19 @@ class MarkdownParser:
 
     HEADING_PATTERN = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
     CODE_BLOCK_START = re.compile(r'^\s*```(\w*)\s*$', re.MULTILINE)
-    INLINE_CODE_PATTERN = re.compile(r'`([^`]+)`')
+    INLINE_CODE_PATTERN = re.compile(r'(?<!\\)(`{1,3})(.+?)(?<!\\)\1(?!`)')
+    BOLD_ITALIC_PATTERN = re.compile(r'\*\*\*([^\*]+)\*\*\*')
     BOLD_PATTERN = re.compile(r'\*\*([^\*]+)\*\*')
     ITALIC_PATTERN = re.compile(r'\*([^\*]+)\*')
     STRIKETHROUGH_PATTERN = re.compile(r'~~([^~]+)~~')
-    LINK_PATTERN = re.compile(r'\[([^\]]+)\]\(([^\)]+)\)')
-    IMAGE_PATTERN = re.compile(r'!\[([^\]]*)\]\(([^\)]+)\)')
+    LINK_PATTERN = re.compile(r'\[([^\]]+)\]\(((?:[^\s()]|\([^\s()]*\))*)\)')
+    IMAGE_PATTERN = re.compile(r'!\[([^\]]*)\]\(((?:[^\s()]|\([^\s()]*\))*)\)')
     EMOJI_PATTERN = re.compile(r':([a-z0-9_+-]+):')
     CHECKBOX_PATTERN = re.compile(r'^(\s*)-\s+\[([ xX])\]\s+(.+)$', re.MULTILINE)
     LIST_ITEM_PATTERN = re.compile(r'^(\s*)[-*]\s+(.+)$', re.MULTILINE)
     ORDERED_LIST_PATTERN = re.compile(r'^(\s*)(\d+)\.\s+(.+)$', re.MULTILINE)
-    BLOCKQUOTE_PATTERN = re.compile(r'^>\s+(.+)$', re.MULTILINE)
-    ALERT_PATTERN = re.compile(r'^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$', re.MULTILINE)
+    BLOCKQUOTE_PATTERN = re.compile(r'^ {0,3}>\s+(.+)$', re.MULTILINE)
+    ALERT_PATTERN = re.compile(r'^ {0,3}>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$', re.MULTILINE)
     HR_PATTERN = re.compile(r'^(\*\*\*+|---+|___+)\s*$', re.MULTILINE)
     TABLE_ROW_PATTERN = re.compile(r'^\|(.+)\|$', re.MULTILINE)
 
@@ -100,9 +102,14 @@ class MarkdownParser:
         return bool(self.HR_PATTERN.match(line))
 
     def apply_inline_formatting(self, text, formatter):
+        text = strip_ansi(text)
         def replace_inline_code(match):
-            return formatter.format_inline_code(match.group(1))
+            return formatter.format_inline_code(match.group(2))
         text = self.INLINE_CODE_PATTERN.sub(replace_inline_code, text)
+
+        def replace_bold_italic(match):
+            return formatter.format_bold(formatter.format_italic(match.group(1)))
+        text = self.BOLD_ITALIC_PATTERN.sub(replace_bold_italic, text)
 
         def replace_bold(match):
             return formatter.format_bold(match.group(1))
