@@ -2,7 +2,6 @@
 Tests for formatters module
 """
 
-import pytest
 from markrender.formatters import MarkdownFormatter
 from markrender.themes import get_theme, list_themes
 
@@ -65,9 +64,9 @@ class TestMarkdownFormatter:
         """Test code block has line numbers when enabled"""
         code = "line1\nline2\nline3"
         result = self.formatter.format_code_block(code, "", line_numbers=True)
-        assert "1" in result
-        assert "2" in result
-        assert "3" in result
+        assert " 1  " in result
+        assert " 2  " in result
+        assert " 3  " in result
 
     def test_format_code_block_no_line_numbers(self):
         """Test code block without line numbers"""
@@ -165,6 +164,7 @@ class TestMarkdownFormatter:
         """Test ordered list item shows number"""
         result = self.formatter.format_list_item("Item", ordered=True, number=5)
         assert "Item" in result
+        assert "5." in result
 
     def test_format_list_item_indent(self):
         """Test indented list item"""
@@ -226,10 +226,12 @@ class TestMarkdownFormatter:
 
     def test_format_hr_width_respects_setting(self):
         """Test HR respects custom width"""
+        import re as _re
         formatter = MarkdownFormatter(get_theme('github-dark'), width=40)
         result = formatter.format_hr()
-        clean = result.replace('\n', '')
-        assert len(clean) > 0
+        clean = _re.sub(r'\033\[[0-9;]*m', '', result).strip()
+        dash_count = clean.count('─')
+        assert dash_count == 40, f'Expected 40 dashes, got {dash_count}'
 
     def test_format_emoji(self):
         """Test emoji formatting"""
@@ -281,7 +283,7 @@ class TestMarkdownFormatter:
     def test_format_alert_border_included(self):
         """Test alert output includes border characters"""
         result = self.formatter.format_alert("WARNING", "test")
-        assert "│" in result or "║" in result or "┃" in result
+        assert "│" in result
 
     def test_format_alert_colored_label(self):
         """Test all alert types produce colored labels"""
