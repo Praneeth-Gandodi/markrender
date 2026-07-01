@@ -1,28 +1,27 @@
-# MarkRender 🎨
+# MarkRender
 
 **Professional Terminal Markdown Renderer for Streaming LLM Responses**
 
-MarkRender is a production-ready Python library that beautifully renders markdown in terminals, specifically designed for streaming LLM responses. It provides syntax highlighting, multiple color themes, and supports all essential markdown features without flickering or performance issues.
+MarkRender is a Python library that renders markdown in terminals, designed for streaming LLM responses. It provides syntax highlighting, multiple color themes, and supports markdown features without flickering.
 
-> [!IMPORTANT]
-> This project is currently in **active development**. While it is designed for production-ready environments, we are continuously iterating to improve performance and stability.
+## Features
 
-## ✨ Features
+- **Streaming Support** - Designed for chunk-by-chunk LLM response rendering
+- **7 Themes** - github-dark, monokai, dracula, nord, one-dark, solarized-dark, solarized-light
+- **Syntax Highlighting** - Powered by Pygments with 500+ languages
+- **Dim Mode** - Render content in dimmed/reduced colors for "thinking" sections
+- **Theme Preview** - Preview all themes with sample content via CLI
+- **Line Numbers** - Optional line numbers in code blocks
+- **Tables** - Table rendering with borders and overflow truncation
+- **Checkboxes** - Task list support
+- **Emoji Support** - Converts `:emoji_name:` to actual emojis
+- **Links** - Styled hyperlinks with URLs
+- **Full Markdown** - Headings, lists, blockquotes, horizontal rules, alerts, and more
+- **Force Color** - Force color output even in non-tty terminals
+- **Customizable** - Custom colors, backgrounds, and formatting options
+- **Python 3.7+** - Compatible with Python 3.7 and above
 
-- 🎯 **Streaming Support** - Designed for chunk-by-chunk LLM response rendering
-- 🎨 **7 Beautiful Themes** - github-dark, monokai, dracula, nord, one-dark, solarized-dark, solarized-light
-- 💻 **Syntax Highlighting** - Powered by Pygments with 500+ languages
-- 🔢 **Line Numbers** - Optional line numbers in code blocks
-- 📊 **Tables** - Beautiful table rendering with borders
-- ✅ **Checkboxes** - Task list support (☐/☑)
-- 😊 **Emoji Support** - Converts `:emoji_name:` to actual emojis
-- 🔗 **Links** - Styled hyperlinks with URLs
-- 📝 **Full Markdown** - Headings, lists, blockquotes, horizontal rules, and more
-- ⚡ **Fast & Smooth** - No flickering, instant rendering
-- 🐍 **Python 3.7+** - Compatible with Python 3.7 and above
-- 🎛️ **Customizable** - Custom colors, backgrounds, and formatting options
-
-## 🚀 Installation
+## Installation
 
 ```bash
 pip install git+https://github.com/Praneeth-Gandodi/markrender.git
@@ -36,11 +35,9 @@ cd markrender
 pip install -e .
 ```
 
-## 📖 Quick Start
+## Quick Start
 
-### Basic Usage
-
-```python
+````python
 from markrender import MarkdownRenderer
 
 # Create renderer with default theme
@@ -66,7 +63,7 @@ def hello():
 
 renderer.render(markdown_text)
 renderer.finalize()
-```
+````
 
 ### Streaming LLM Responses
 
@@ -93,12 +90,35 @@ for chunk in stream:
 renderer.finalize()
 ```
 
-## 🎨 Themes
+### Dim Mode
+
+Use dim mode for "thinking" sections or less prominent content:
+
+```python
+from markrender import MarkdownRenderer
+
+renderer = MarkdownRenderer()
+
+# Normal rendering
+renderer.render("This is **normal** content")
+
+# Dim/reduced color rendering
+renderer.render("This content is dimmed and less prominent", dim_mode=True)
+```
+
+### Theme Preview
+
+Preview all available themes from the CLI:
+
+```bash
+markrender --preview-themes
+```
+
+## Themes
 
 MarkRender includes 7 professional color themes:
 
 ```python
-# Available themes
 themes = [
     'github-dark',      # GitHub's dark theme (default)
     'monokai',          # Popular Monokai theme
@@ -109,24 +129,31 @@ themes = [
     'solarized-light'   # Solarized Light
 ]
 
-# Use a theme
 renderer = MarkdownRenderer(theme='dracula')
 ```
 
-## ⚙️ Configuration
+List available themes:
 
-Customize the renderer to your needs:
+```bash
+markrender --list-themes
+```
+
+## Configuration
+
+### Python API
 
 ```python
 from markrender import MarkdownRenderer
 from markrender.colors import rgb
 
 renderer = MarkdownRenderer(
-    theme='monokai',                    # Color theme
-    code_background=False,              # Show background in code blocks
-    line_numbers=True,                  # Show line numbers in code
+    theme='monokai',                       # Color theme
+    code_background=False,                 # Show background in code blocks
+    line_numbers=True,                     # Show line numbers in code
     inline_code_color=rgb(255, 100, 200),  # Custom inline code color
-    width=100                           # Terminal width (auto-detect by default)
+    width=100,                             # Terminal width (auto-detect by default)
+    force_color=False,                     # Force color output
+    stream_code=True                       # Stream code lines as they arrive
 )
 ```
 
@@ -135,11 +162,45 @@ renderer = MarkdownRenderer(
 - **theme** (str): Color theme name (default: `'github-dark'`)
 - **code_background** (bool): Show background in code blocks (default: `False`)
 - **line_numbers** (bool): Show line numbers in code blocks (default: `True`)
-- **inline_code_color** (str): Custom ANSI color code for inline code (default: theme's purple variant)
+- **inline_code_color** (str): Custom ANSI color code for inline code (default: theme default)
 - **width** (int): Terminal width in characters (default: auto-detect)
+- **force_color** (bool): Force color output even if terminal does not support it (default: `False`)
+- **stream_code** (bool): Render code lines as they arrive instead of buffering (default: `True`)
 - **output** (file): Output stream (default: `sys.stdout`)
 
-## 📚 Supported Markdown Features
+### CLI Usage
+
+```bash
+markrender README.md
+markrender --theme dracula file.md
+cat file.md | markrender
+markrender --preview-themes
+markrender --list-themes
+markrender --no-line-numbers --code-background file.md
+markrender --width 80 --force-color file.md
+```
+
+### Config File
+
+MarkRender supports TOML configuration files. Place a `.markrender.toml` in your current directory or `~/.markrender/config.toml`:
+
+```toml
+[theme]
+name = "github-dark"
+
+[rendering]
+code_background = false
+line_numbers = true
+
+[output]
+# width = 80
+force_color = false
+
+[features]
+stream_code = true
+```
+
+## Supported Markdown Features
 
 ### Headings
 ```markdown
@@ -168,8 +229,8 @@ Use `inline code` for short snippets.
 ```markdown
 | Feature | Supported |
 |---------|-----------|
-| Tables  | ✓         |
-| Borders | ✓         |
+| Tables  | Yes       |
+| Borders | Yes       |
 ```
 
 ### Lists
@@ -194,6 +255,24 @@ Use `inline code` for short snippets.
 > It can span multiple lines
 ```
 
+### Alerts (GitHub-flavored)
+```markdown
+> [!NOTE]
+> Useful information users should know
+
+> [!TIP]
+> Helpful advice
+
+> [!IMPORTANT]
+> Key information
+
+> [!WARNING]
+> Urgent information
+
+> [!CAUTION]
+> Potential negative consequences
+```
+
 ### Links
 ```markdown
 [Link text](https://example.com)
@@ -203,6 +282,7 @@ Use `inline code` for short snippets.
 ```markdown
 **Bold text**
 *Italic text*
+***Bold and italic***
 ~~Strikethrough~~
 ```
 
@@ -216,7 +296,7 @@ Hello :wave: Let's :rocket: go!
 ---
 ```
 
-## 🎯 Use Cases
+## Use Cases
 
 - **AI Chat Applications** - Render LLM responses in CLI tools
 - **Documentation Viewers** - Display markdown documentation in terminal
@@ -224,61 +304,33 @@ Hello :wave: Let's :rocket: go!
 - **Note-Taking Apps** - Terminal-based markdown note viewers
 - **Log Viewers** - Render structured logs with markdown
 
-## 🤝 Comparison with Alternatives
-
-Unlike `rich.Markdown` which can flicker during streaming and has higher computational overhead, MarkRender is specifically optimized for:
-
-- ✅ Smooth streaming without redrawing
-- ✅ Lower CPU usage
-- ✅ GitHub-style markdown rendering
-- ✅ Professional code block styling like Claude CLI, Gemini CLI, and Qwen CLI
-- ✅ Customizable themes and colors
-
-## 🧪 Development
+## Development
 
 ### Setup Development Environment
 
 ```bash
-# Clone repository
 git clone https://github.com/Praneeth-Gandodi/markrender.git
 cd markrender
-
-# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install development dependencies
 pip install -e ".[dev]"
 ```
 
 ### Run Tests
 
 ```bash
-# Run all tests
 pytest tests/ -v
-
-# Run with coverage
 pytest tests/ --cov=markrender --cov-report=html --cov-report=term
 ```
 
 ### Run Examples
 
 ```bash
-# Basic usage
 python examples/basic_usage.py
-
-# Streaming demo
 python examples/streaming_demo.py
-
-# Theme showcase
 python examples/theme_showcase.py
 ```
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **Pygments** - Syntax highlighting engine
-- **emoji** - Emoji rendering support
