@@ -354,8 +354,9 @@ the repository. Configure it once:
   owner `Praneeth-Gandodi`, repository `markrender`, workflow `publish.yml`,
   environment `pypi`.
 - **GitHub:** Settings → Environments → create an environment named `pypi`.
-- **GitHub:** Settings → Actions → General → Workflow permissions → allow
-  read and write permissions so the workflow can push the release tag.
+
+The repository default workflow permission can stay read-only; the workflow
+requests `contents: write` only for the jobs that create the tag and release.
 
 You can also publish an existing tag directly:
 

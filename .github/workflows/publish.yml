@@ -61,12 +61,9 @@ jobs:
     name: Prepare release
     needs: test
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
-      checkout_ref: ${{ steps.version.outputs.checkout_ref }}
       publish: ${{ steps.version.outputs.publish }}
       skip: ${{ steps.version.outputs.skip }}
     steps:
@@ -100,7 +97,6 @@ jobs:
             fi
             VERSION="${TAG#v}"
             PUBLISH="true"
-            CHECKOUT_REF="$TAG"
           else
             BUMP="${BUMP:-auto}"
             set +e
@@ -111,7 +107,6 @@ jobs:
             if [ "$STATUS" -eq 3 ]; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
               echo "publish=false" >> "$GITHUB_OUTPUT"
-              echo "checkout_ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
               echo "No commits since the latest tag; skipping release."
               exit 0
             elif [ "$STATUS" -ne 0 ]; then
@@ -121,23 +116,19 @@ jobs:
             TAG="v$VERSION"
             if [ "$DRY_RUN" = "true" ]; then
               PUBLISH="false"
-              CHECKOUT_REF="$GITHUB_SHA"
             else
               PUBLISH="true"
-              CHECKOUT_REF="$TAG"
             fi
           fi
 
           echo "version=$VERSION"
           echo "tag=$TAG"
           echo "publish=$PUBLISH"
-          echo "checkout_ref=$CHECKOUT_REF"
 
           {
             echo "version=$VERSION"
             echo "tag=$TAG"
             echo "publish=$PUBLISH"
-            echo "checkout_ref=$CHECKOUT_REF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Check PyPI for an existing release
@@ -151,22 +142,6 @@ jobs:
             exit 1
           fi
 
-      - name: Create and push tag
-        if: steps.version.outputs.skip != 'true' && steps.version.outputs.publish == 'true' && github.ref_type != 'tag'
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if git rev-parse --quiet --verify "refs/tags/$TAG" >/dev/null; then
-            echo "::error::Tag $TAG already exists."
-            exit 1
-          fi
-
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-
   build:
     name: Build distribution
     needs: prepare
@@ -175,7 +150,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.checkout_ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -235,8 +210,36 @@ jobs:
       name: pypi
       url: https://pypi.org/p/markrender
     permissions:
+      contents: write
       id-token: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Create and push tag
+        if: github.ref_type != 'tag'
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse --quiet --verify "refs/tags/$TAG" >/dev/null; then
+            EXISTING_SHA="$(git rev-list -n 1 "$TAG")"
+            if [ "$EXISTING_SHA" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag $TAG exists at $EXISTING_SHA, not $GITHUB_SHA."
+              exit 1
+            fi
+            echo "Tag $TAG already points at this commit; continuing."
+            exit 0
+          fi
+
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
       - uses: actions/download-artifact@v4
         with:
           name: dist
