@@ -7,6 +7,11 @@ and the project uses [Semantic Versioning](https://semver.org/). Releases are
 cut from conventional commits, and new entries are added by the publish
 workflow when a release goes out.
 
+## [1.2.0] - 2026-10-30
+
+### Added
+- Honor table column alignment and fit widths fairly
+
 ## [1.1.1] - 2026-10-30
 
 ### Fixed
