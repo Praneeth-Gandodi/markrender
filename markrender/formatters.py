@@ -12,7 +12,7 @@ try:
 except ImportError:
     emoji_lib = None
 
-from .colors import colorize, strip_ansi, Colors, get_terminal_width
+from .colors import colorize, Colors, get_terminal_width
 
 
 class MarkdownFormatter:
@@ -34,11 +34,10 @@ class MarkdownFormatter:
         self.code_background = code_background
         self.width = width or get_terminal_width()
         self.force_color = force_color
-        self.dim_mode = False
 
     def _colorize(self, text, color_code):
-        """Wrap colorize with instance-level force_color and dim_mode settings"""
-        return colorize(text, color_code, force_color=self.force_color, dim_mode=self.dim_mode)
+        """Wrap colorize with the instance-level force_color setting"""
+        return colorize(text, color_code, force_color=self.force_color)
     
     def format_heading(self, level, text):
         """
@@ -94,12 +93,6 @@ class MarkdownFormatter:
         except Exception:
             formatter = Terminal256Formatter(style='monokai')
         highlighted = highlight(code, lexer, formatter).rstrip('\n')
-
-        if self.dim_mode:
-            highlighted = '\n'.join(
-                self._colorize(strip_ansi(line), '')
-                for line in highlighted.split('\n')
-            )
 
         # Add line numbers if requested
         if line_numbers:
@@ -314,8 +307,6 @@ class MarkdownFormatter:
             highlighted = highlight(line, lexer, formatter).rstrip('\n')
         except Exception:
             highlighted = line
-        if self.dim_mode:
-            highlighted = self._colorize(strip_ansi(highlighted), '')
         return highlighted
 
     def format_emoji(self, emoji_code):

@@ -9,7 +9,7 @@ MarkRender renders markdown in the terminal. It is built for streaming output, s
 - **Streaming Support** - Designed for chunk-by-chunk LLM response rendering
 - **7 Themes** - github-dark, monokai, dracula, nord, one-dark, solarized-dark, solarized-light
 - **Syntax Highlighting** - Powered by Pygments with 500+ languages
-- **Dim Mode** - Render content in dimmed/reduced colors for "thinking" sections
+- **Dim Mode** - Render "thinking" content in a single muted gray
 - **Theme Preview** - Preview all themes with sample content via CLI
 - **Line Numbers** - Optional line numbers in code blocks
 - **Tables** - Table rendering with borders and overflow truncation
@@ -182,7 +182,7 @@ The renderer keeps partial lines and open blocks in an internal buffer, so chunk
 
 ### Dim mode
 
-`render()` takes a `dim_mode` argument, which draws that chunk in muted colors. This is useful for reasoning or "thinking" output that should stay visible without competing with the answer:
+`render()` takes a `dim_mode` argument, which draws that chunk as plain muted gray. Formatting colors, bold, and syntax highlighting are dropped so the whole block reads like thinking text instead of competing with the answer:
 
 ```python
 renderer.render("Let me think about this...", dim_mode=True)

@@ -8,7 +8,7 @@ from .parser import MarkdownParser
 from .formatters import MarkdownFormatter
 from .themes import get_theme
 from .config import RendererConfig
-from .colors import get_terminal_width, colorize, Colors, strip_ansi
+from .colors import get_terminal_width, colorize, Colors, strip_ansi, dim_text
 
 
 class RenderState:
@@ -127,7 +127,6 @@ class MarkdownRenderer:
         if chunk is None:
             return
 
-        self.formatter.dim_mode = dim_mode
         self._dim_mode = dim_mode
 
         chunk = strip_ansi(chunk)
@@ -420,6 +419,9 @@ class MarkdownRenderer:
     def _write(self, text, element_type='inline'):
         """Write text to output with spacing management"""
         self._ensure_spacing(element_type)
+        ended_with_newline = text.endswith('\n')
+        if self._dim_mode:
+            text = dim_text(text, force_color=self.force_color)
         try:
             self.output.write(text)
         except UnicodeEncodeError:
@@ -429,7 +431,7 @@ class MarkdownRenderer:
                 text.encode('ascii', errors='replace').decode('ascii')
             )
         self.output.flush()
-        self._last_output_ended_with_newline = text.endswith('\n')
+        self._last_output_ended_with_newline = ended_with_newline
 
     def _write_code_line(self, line):
         highlighted = self.formatter.format_code_line(line, self.state.code_language)
@@ -438,7 +440,7 @@ class MarkdownRenderer:
             w = len(str(num))
             if w > self.state.code_line_num_width:
                 self.state.code_line_num_width = w
-            formatted = colorize(f'{num:>{self.state.code_line_num_width}}', Colors.BRIGHT_BLACK, force_color=self.force_color, dim_mode=self._dim_mode)
+            formatted = colorize(f'{num:>{self.state.code_line_num_width}}', Colors.BRIGHT_BLACK, force_color=self.force_color)
             output = f' {formatted}  {highlighted}'
         else:
             output = f'  {highlighted}'

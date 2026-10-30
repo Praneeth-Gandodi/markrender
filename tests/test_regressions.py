@@ -189,8 +189,9 @@ class TestCodeBlockRegressions:
         renderer.finalize()
 
         result = output.getvalue()
-        assert "\x1b[2m" in result
+        assert "\x1b[90m" in result
         assert "x = 1" in result
+        assert "\x1b[38;" not in result
 
 
 class TestEncodingFallback:

@@ -132,7 +132,7 @@ def colorize(text, color_code, force_color=None, dim_mode=None):
         return text
     _dim = dim_mode if dim_mode is not None else _dim_mode
     if _dim:
-        prefix = Colors.BRIGHT_BLACK + Colors.DIM
+        prefix = Colors.BRIGHT_BLACK
     else:
         prefix = color_code
     return f'{prefix}{text}{Colors.RESET}'
@@ -201,3 +201,29 @@ def strip_ansi(text):
     if not isinstance(text, str):
         return text
     return _ANSI_PATTERN.sub('', text)
+
+
+def dim_text(text, force_color=None):
+    """
+    Render every line of text in a single muted gray tone.
+
+    This is used for "thinking" content: existing colors and text styles are
+    discarded so the whole block reads as one dimmed block.
+
+    Args:
+        text: Already formatted text, possibly containing ANSI escapes
+        force_color: Whether to emit color even without a TTY
+
+    Returns:
+        Text with each non-empty line wrapped in the dim gray color
+    """
+    if not text or not supports_color(force_color=force_color):
+        return text
+
+    clean = strip_ansi(text)
+    lines = clean.split('\n')
+    dimmed = [
+        f'{Colors.BRIGHT_BLACK}{line}{Colors.RESET}' if line else line
+        for line in lines
+    ]
+    return '\n'.join(dimmed)
