@@ -1,0 +1,2 @@
+# CI configuration is not needed in the source distribution.
+prune .github

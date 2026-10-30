@@ -331,6 +331,42 @@ python examples/streaming_demo.py
 python examples/theme_showcase.py
 ```
 
+### Releasing
+
+The package version is derived from git tags by `setuptools_scm`, so there is
+no version number to edit by hand.
+
+1. Open **Actions → Publish → Run workflow**.
+2. Choose `auto` (recommended) or an explicit `patch`, `minor`, or `major` bump.
+3. The workflow runs the tests, creates the next `vX.Y.Z` tag, builds the
+   sdist and wheel, publishes to PyPI, and creates a GitHub release.
+
+With `auto`, commit messages since the last tag decide the bump:
+
+- `feat!:` or a `BREAKING CHANGE:` footer → major
+- `feat:` → minor
+- everything else → patch
+
+Publishing uses PyPI Trusted Publishing (OIDC), so no API token is stored in
+the repository. Configure it once:
+
+- **PyPI:** project `markrender` → Publishing → add a trusted publisher with
+  owner `Praneeth-Gandodi`, repository `markrender`, workflow `publish.yml`,
+  environment `pypi`.
+- **GitHub:** Settings → Environments → create an environment named `pypi`.
+- **GitHub:** Settings → Actions → General → Workflow permissions → allow
+  read and write permissions so the workflow can push the release tag.
+
+You can also publish an existing tag directly:
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+To publish automatically after every merge to `main`, uncomment the `branches:
+[main]` trigger in `.github/workflows/publish.yml`.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.

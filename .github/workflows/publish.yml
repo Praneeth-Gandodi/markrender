@@ -1,0 +1,272 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+    # Uncomment the next two lines to publish automatically on every push to main.
+    # branches:
+    #   - main
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump (auto reads conventional commits)"
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - patch
+          - minor
+          - major
+      dry_run:
+        description: "Test and build only; do not tag or publish"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest -q
+
+  prepare:
+    name: Prepare release
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      checkout_ref: ${{ steps.version.outputs.checkout_ref }}
+      publish: ${{ steps.version.outputs.publish }}
+      skip: ${{ steps.version.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          BUMP: ${{ inputs.bump }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          if [ "$REF_TYPE" = "tag" ]; then
+            TAG="$REF_NAME"
+            if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Tag '$TAG' is not a vX.Y.Z release tag."
+              exit 1
+            fi
+            VERSION="${TAG#v}"
+            PUBLISH="true"
+            CHECKOUT_REF="$TAG"
+          else
+            BUMP="${BUMP:-auto}"
+            set +e
+            VERSION="$(python .github/scripts/next_version.py --bump "$BUMP")"
+            STATUS=$?
+            set -e
+
+            if [ "$STATUS" -eq 3 ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              echo "checkout_ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+              echo "No commits since the latest tag; skipping release."
+              exit 0
+            elif [ "$STATUS" -ne 0 ]; then
+              exit "$STATUS"
+            fi
+
+            TAG="v$VERSION"
+            if [ "$DRY_RUN" = "true" ]; then
+              PUBLISH="false"
+              CHECKOUT_REF="$GITHUB_SHA"
+            else
+              PUBLISH="true"
+              CHECKOUT_REF="$TAG"
+            fi
+          fi
+
+          echo "version=$VERSION"
+          echo "tag=$TAG"
+          echo "publish=$PUBLISH"
+          echo "checkout_ref=$CHECKOUT_REF"
+
+          {
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "publish=$PUBLISH"
+            echo "checkout_ref=$CHECKOUT_REF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check PyPI for an existing release
+        if: steps.version.outputs.skip != 'true' && github.ref_type != 'tag'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if curl --fail --silent --show-error \
+            "https://pypi.org/pypi/markrender/${VERSION}/json" >/dev/null; then
+            echo "::error::Version ${VERSION} already exists on PyPI."
+            exit 1
+          fi
+
+      - name: Create and push tag
+        if: steps.version.outputs.skip != 'true' && steps.version.outputs.publish == 'true' && github.ref_type != 'tag'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse --quiet --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG already exists."
+            exit 1
+          fi
+
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+  build:
+    name: Build distribution
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build sdist and wheel
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ needs.prepare.outputs.version }}
+        run: python -m build
+
+      - name: Check package metadata
+        run: twine check dist/*
+
+      - name: Verify built version
+        env:
+          EXPECTED_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          python - <<'PY'
+          import glob
+          import os
+          from pathlib import Path
+
+          expected = os.environ["EXPECTED_VERSION"]
+          sdist = f"markrender-{expected}.tar.gz"
+          wheel_prefix = f"markrender-{expected}-"
+          names = [Path(path).name for path in glob.glob("dist/*")]
+          print("Built:", names)
+          if sdist not in names or not any(
+              name.startswith(wheel_prefix) for name in names
+          ):
+              raise SystemExit(
+                  f"Expected version {expected} in dist filenames: {names}"
+              )
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs:
+      - prepare
+      - build
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/markrender
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish package
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          print-hash: true
+          skip-existing: true
+
+  release:
+    name: Create GitHub release
+    needs:
+      - prepare
+      - publish
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists."
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          fi

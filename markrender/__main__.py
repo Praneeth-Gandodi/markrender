@@ -7,6 +7,7 @@ import sys
 import argparse
 from pathlib import Path
 
+from . import __version__
 from .renderer import MarkdownRenderer
 from .themes import list_themes
 
@@ -135,7 +136,7 @@ def main():
     parser.add_argument(
         '-v', '--version',
         action='version',
-        version='markrender 1.0.0'
+        version=f'markrender {__version__}'
     )
 
     args = parser.parse_args()

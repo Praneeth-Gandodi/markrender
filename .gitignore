@@ -65,6 +65,7 @@ Thumbs.db
 # Project specific
 *.log
 .ruff_cache/
+markrender/_version.py
 
 
 # test files

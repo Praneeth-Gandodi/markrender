@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=61", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "markrender"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Professional terminal markdown renderer for streaming LLM responses"
 readme = "README.md"
 requires-python = ">=3.7"
@@ -39,6 +39,14 @@ dev = [
 
 [project.scripts]
 markrender = "markrender.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["markrender*"]
+
+[tool.setuptools_scm]
+version_file = "markrender/_version.py"
+fallback_version = "1.0.7"
+local_scheme = "no-local-version"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
