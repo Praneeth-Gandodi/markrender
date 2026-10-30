@@ -176,7 +176,16 @@ def get_terminal_width():
         return 80
 
 
-_ANSI_PATTERN = re.compile(r'\033\[[0-9;]*[a-zA-Z]|\033\][0-9;]*[a-zA-Z].*?(\033\\|[\a])|[\x80-\x9f]')
+_ANSI_PATTERN = re.compile(
+    r"""
+    \x1b\[[0-?]*[ -/]*[@-~]              # CSI sequences (colors, cursor control)
+    | \x1b\][^\x07\x1b]*(?:\x07|\x1b\\|$)  # OSC sequences (titles, hyperlinks)
+    | \x1b[ -/]*[@-~]                    # Other escape sequences (e.g. ESC ( B)
+    | \x1b                              # Stray escape character
+    | [\x80-\x9f]                        # C1 control characters
+    """,
+    re.VERBOSE,
+)
 
 
 def strip_ansi(text):

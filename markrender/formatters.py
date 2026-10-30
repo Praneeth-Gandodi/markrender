@@ -12,7 +12,7 @@ try:
 except ImportError:
     emoji_lib = None
 
-from .colors import colorize, Colors, get_terminal_width
+from .colors import colorize, strip_ansi, Colors, get_terminal_width
 
 
 class MarkdownFormatter:
@@ -93,8 +93,14 @@ class MarkdownFormatter:
             formatter = Terminal256Formatter(style=self.theme.get('pygments_style', 'monokai'))
         except Exception:
             formatter = Terminal256Formatter(style='monokai')
-        highlighted = highlight(code, lexer, formatter).rstrip()
-        
+        highlighted = highlight(code, lexer, formatter).rstrip('\n')
+
+        if self.dim_mode:
+            highlighted = '\n'.join(
+                self._colorize(strip_ansi(line), '')
+                for line in highlighted.split('\n')
+            )
+
         # Add line numbers if requested
         if line_numbers:
             lines = highlighted.split('\n')
@@ -104,18 +110,25 @@ class MarkdownFormatter:
             formatted_lines = []
             for i, line in enumerate(lines, 1):
                 line_num = self._colorize(f'{i:>{num_width}}', Colors.BRIGHT_BLACK)
-                # Add background if requested
-                if self.code_background:
-                    formatted_lines.append(f'{Colors.BG_BRIGHT_BLACK} {line_num} {Colors.RESET} {line}')
-                else:
-                    formatted_lines.append(f' {line_num}  {line}')
+                line = self._apply_code_background(line)
+                formatted_lines.append(f' {line_num}  {line}')
             
             result = '\n'.join(formatted_lines)
         else:
-            result = highlighted
+            result = self._apply_code_background(highlighted)
         
         # Add spacing
         return f'\n{result}\n'
+
+    def _apply_code_background(self, line):
+        """Apply the configured code background across a whole line."""
+        if not self.code_background:
+            return line
+        background = Colors.BG_BRIGHT_BLACK
+        # Pygments resets colors inside the line; restore the background after
+        # each reset so the whole line stays shaded.
+        line = line.replace(Colors.RESET, Colors.RESET + background)
+        return f'{background}{line}{Colors.RESET}'
     
     def format_inline_code(self, text):
         """
@@ -301,6 +314,8 @@ class MarkdownFormatter:
             highlighted = highlight(line, lexer, formatter).rstrip('\n')
         except Exception:
             highlighted = line
+        if self.dim_mode:
+            highlighted = self._colorize(strip_ansi(highlighted), '')
         return highlighted
 
     def format_emoji(self, emoji_code):

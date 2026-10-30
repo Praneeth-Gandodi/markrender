@@ -32,9 +32,9 @@ print(f"Fibonacci(10) = {result}")
     
     # Display each theme
     for theme_name in list_themes():
-        print(f"\n{'─' * 80}")
+        print(f"\n{'-' * 80}")
         print(f"Theme: {theme_name.upper()}")
-        print('─' * 80)
+        print('-' * 80)
         
         # Create renderer with this theme
         renderer = MarkdownRenderer(

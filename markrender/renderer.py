@@ -7,6 +7,7 @@ from typing import Optional
 from .parser import MarkdownParser
 from .formatters import MarkdownFormatter
 from .themes import get_theme
+from .config import RendererConfig
 from .colors import get_terminal_width, colorize, Colors, strip_ansi
 
 
@@ -15,6 +16,7 @@ class RenderState:
     def __init__(self):
         self.in_code_block = False
         self.code_language = ''
+        self.code_fence_length = 3
         self.code_lines = []
         self.code_line_count = 0
         self.code_line_num_width = 3
@@ -28,6 +30,7 @@ class RenderState:
     def reset_code(self):
         self.in_code_block = False
         self.code_language = ''
+        self.code_fence_length = 3
         self.code_lines = []
         self.code_line_count = 0
 
@@ -64,36 +67,54 @@ class MarkdownRenderer:
 
     def __init__(
         self,
-        theme='github-dark',
-        code_background=False,
+        theme=None,
+        code_background=None,
         inline_code_color=None,
-        line_numbers=True,
+        line_numbers=None,
         width=None,
         output=None,
-        stream_code=True,
-        force_color=False,
+        stream_code=None,
+        force_color=None,
+        use_config=True,
+        config=None,
     ):
-        self.theme_config = get_theme(theme)
-        self.code_background = code_background
-        self.line_numbers = line_numbers
-        self.stream_code = stream_code
-        self.width = width or get_terminal_width()
-        self.force_color = force_color
+        if config is None:
+            config = RendererConfig.from_file() if use_config else RendererConfig()
+        explicit = {
+            'theme': theme,
+            'code_background': code_background,
+            'inline_code_color': inline_code_color,
+            'line_numbers': line_numbers,
+            'width': width,
+            'stream_code': stream_code,
+            'force_color': force_color,
+        }
+        for key, value in explicit.items():
+            if value is not None:
+                config.config[key] = value
+
+        self.theme_config = get_theme(config.theme)
+        self.code_background = config.code_background
+        self.line_numbers = config.line_numbers
+        self.stream_code = config.stream_code
+        self.width = config.width or get_terminal_width()
+        self.force_color = config.force_color
         self.output = output or self._get_utf8_output(sys.stdout)
 
         self.parser = MarkdownParser()
         self.formatter = MarkdownFormatter(
             self.theme_config,
-            inline_code_color=inline_code_color,
-            code_background=code_background,
+            inline_code_color=config.inline_code_color,
+            code_background=self.code_background,
             width=self.width,
-            force_color=force_color,
+            force_color=self.force_color,
         )
 
         self.buffer = ''
         self.state = RenderState()
         self._last_element = None
         self._last_output_ended_with_newline = False
+        self._dim_mode = False
 
     def render(self, chunk, dim_mode=False):
         """
@@ -110,6 +131,8 @@ class MarkdownRenderer:
         self._dim_mode = dim_mode
 
         chunk = strip_ansi(chunk)
+        if isinstance(chunk, str):
+            chunk = chunk.replace('\r\n', '\n').replace('\r', '\n')
         self.buffer += chunk
 
         if self.state.in_code_block:
@@ -129,29 +152,24 @@ class MarkdownRenderer:
         if '\n' not in self.buffer:
             return
 
-        ends_with_newline = self.buffer.endswith('\n')
-        lines = self.buffer.split('\n')
-        if ends_with_newline:
-            lines = lines[:-1]
+        parts = self.buffer.split('\n')
+        complete_lines = parts[:-1]
+        tail = parts[-1]
 
         closing_idx = -1
-        for idx, line in enumerate(lines):
-            if line.strip().startswith('```'):
+        for idx, line in enumerate(complete_lines):
+            fence = self.parser.parse_code_fence(line.strip())
+            if fence is None:
+                continue
+            fence_length, language = fence
+            if not language and fence_length >= self.state.code_fence_length:
                 closing_idx = idx
                 break
 
         if closing_idx >= 0:
-            new_lines = lines[:closing_idx]
-            if self.stream_code:
-                for _line in new_lines:
-                    if _line == '' and not self.state.code_lines:
-                        continue
-                    self.state.code_line_count += 1
-                    self.state.code_lines.append(_line)
-                    self._write_code_line(_line)
-            else:
-                code_lines = [_line for _line in new_lines if _line != '' or self.state.code_lines]
-                all_code = '\n'.join(self.state.code_lines + code_lines)
+            self._consume_code_lines(complete_lines[:closing_idx])
+            if not self.stream_code:
+                all_code = '\n'.join(self.state.code_lines)
                 formatted = self.formatter.format_code_block(
                     all_code,
                     self.state.code_language,
@@ -159,23 +177,31 @@ class MarkdownRenderer:
                 )
                 self._write(formatted, 'code_block')
             self.state.reset_code()
-            remaining_lines = lines[closing_idx + 1:]
-            suffix = '\n' if ends_with_newline else ''
-            self.buffer = '\n'.join(remaining_lines) + suffix
+            self.buffer = self._rebuild_buffer(
+                complete_lines[closing_idx + 1:], tail
+            )
             self._process_remaining_buffer()
         else:
-            if self.stream_code:
-                for _line in lines:
-                    if _line == '' and not self.state.code_lines:
-                        continue
-                    self.state.code_line_count += 1
-                    self.state.code_lines.append(_line)
-                    self._write_code_line(_line)
-                self.buffer = ''
-            else:
-                code_lines = [_line for _line in lines if _line != '' or self.state.code_lines]
-                self.state.code_lines.extend(code_lines)
-                self.buffer = ''
+            self._consume_code_lines(complete_lines)
+            self.buffer = tail
+
+    def _consume_code_lines(self, lines):
+        if self.stream_code:
+            for line in lines:
+                self.state.code_line_count += 1
+                self.state.code_lines.append(line)
+                self._write_code_line(line)
+        else:
+            self.state.code_lines.extend(lines)
+
+    @staticmethod
+    def _rebuild_buffer(lines, tail):
+        """Reassemble unprocessed buffered lines without losing newlines."""
+        if tail:
+            return '\n'.join(lines + [tail])
+        if lines:
+            return '\n'.join(lines) + '\n'
+        return ''
 
     def _process_remaining_buffer(self):
         if self.state.in_code_block:
@@ -194,12 +220,11 @@ class MarkdownRenderer:
         if '\n' not in self.buffer:
             return
 
-        ends_with_newline = self.buffer.endswith('\n')
-        lines = self.buffer.split('\n')
-        if ends_with_newline:
-            lines = lines[:-1]
+        parts = self.buffer.split('\n')
+        complete_lines = parts[:-1]
+        tail = parts[-1]
 
-        for i, line in enumerate(lines):
+        for i, line in enumerate(complete_lines):
             stripped = line.rstrip()
             table_row = self.parser.parse_table_row(stripped)
             if table_row is not None:
@@ -211,26 +236,39 @@ class MarkdownRenderer:
                     formatted = self.formatter.format_table(self.state.table_rows)
                     self._write(formatted, 'table')
                 self.state.reset_table()
-                remaining = lines[i:]
-                if ends_with_newline:
-                    remaining.append('')
-                self.buffer = '\n'.join(remaining)
+                self.buffer = self._rebuild_buffer(complete_lines[i:], tail)
                 return
 
-        self.buffer = ''
+        self.buffer = tail
+
+    def _flush_blockquote(self):
+        """Render the buffered blockquote or alert."""
+        text = '\n'.join(self.state.blockquote_lines)
+        if self.state.alert_type:
+            formatted = self.formatter.format_alert(self.state.alert_type, text)
+        elif text:
+            formatted = self.formatter.format_blockquote(text)
+        else:
+            formatted = ''
+        if formatted:
+            self._write(formatted, 'blockquote')
+        self.state.reset_blockquote()
 
     def _process_line(self, line):
         """Process a single line of markdown"""
         stripped = line.rstrip()
 
-        lang = self.parser.parse_code_block_delimiter(stripped)
-        if lang is not None:
+        fence = self.parser.parse_code_fence(stripped)
+        if fence is not None:
+            fence_length, lang = fence
             if not self.state.in_code_block:
                 self.state.in_code_block = True
                 self.state.code_language = lang
+                self.state.code_fence_length = fence_length
                 self.state.code_lines = []
                 self.state.code_line_count = 0
-            else:
+                return
+            if not lang and fence_length >= self.state.code_fence_length:
                 if not self.stream_code:
                     code = '\n'.join(self.state.code_lines)
                     formatted = self.formatter.format_code_block(
@@ -240,7 +278,9 @@ class MarkdownRenderer:
                     )
                     self._write(formatted, 'code_block')
                 self.state.reset_code()
-            return
+                return
+            # A shorter fence or a fence with an info string is code content.
+            # Fall through to the in-code-block branch below.
 
         if self.state.in_code_block:
             content = line.rstrip('\n')
@@ -272,19 +312,13 @@ class MarkdownRenderer:
                 self.state.alert_type = self.parser.parse_alert(stripped)
                 if self.state.alert_type:
                     return
-            self.state.blockquote_lines.append(blockquote_text)
+            formatted_text = self.parser.apply_inline_formatting(blockquote_text, self.formatter)
+            self.state.blockquote_lines.append(formatted_text)
             return
         elif self.state.in_blockquote:
-            text = '\n'.join(self.state.blockquote_lines)
-            if self.state.alert_type:
-                formatted = self.formatter.format_alert(self.state.alert_type, text)
-            elif text:
-                formatted = self.formatter.format_blockquote(text)
-            else:
-                formatted = ''
-            if formatted:
-                self._write(formatted, 'blockquote')
-            self.state.reset_blockquote()
+            self._flush_blockquote()
+            # The current line ends the quote, so process it as a new element.
+            self._process_line(line)
             return
 
         if self.parser.is_hr(stripped):
@@ -355,16 +389,7 @@ class MarkdownRenderer:
             self.state.reset_table()
 
         if self.state.in_blockquote:
-            text = '\n'.join(self.state.blockquote_lines)
-            if self.state.alert_type:
-                formatted = self.formatter.format_alert(self.state.alert_type, text)
-            elif text:
-                formatted = self.formatter.format_blockquote(text)
-            else:
-                formatted = ''
-            if formatted:
-                self._write(formatted, 'blockquote')
-            self.state.reset_blockquote()
+            self._flush_blockquote()
 
         self.output.flush()
 
@@ -398,7 +423,11 @@ class MarkdownRenderer:
         try:
             self.output.write(text)
         except UnicodeEncodeError:
-            self.output.write(text.encode('utf-8', errors='replace').decode('utf-8'))
+            # Fall back to ASCII so terminals with narrow encodings do not
+            # crash on box-drawing characters or emoji.
+            self.output.write(
+                text.encode('ascii', errors='replace').decode('ascii')
+            )
         self.output.flush()
         self._last_output_ended_with_newline = text.endswith('\n')
 
@@ -410,6 +439,9 @@ class MarkdownRenderer:
             if w > self.state.code_line_num_width:
                 self.state.code_line_num_width = w
             formatted = colorize(f'{num:>{self.state.code_line_num_width}}', Colors.BRIGHT_BLACK, force_color=self.force_color, dim_mode=self._dim_mode)
-            self._write(f' {formatted}  {highlighted}\n', 'code_block')
+            output = f' {formatted}  {highlighted}'
         else:
-            self._write(f'  {highlighted}\n', 'code_block')
+            output = f'  {highlighted}'
+        if self.code_background:
+            output = self.formatter._apply_code_background(output)
+        self._write(output + '\n', 'code_block')

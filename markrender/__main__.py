@@ -81,19 +81,21 @@ def main():
 
     parser.add_argument(
         '--theme',
-        default='github-dark',
+        default=None,
         help=f'Color theme (default: github-dark). Available: {", ".join(list_themes())}'
     )
 
     parser.add_argument(
         '--no-line-numbers',
         action='store_true',
+        default=None,
         help='Hide line numbers in code blocks'
     )
 
     parser.add_argument(
         '--code-background',
         action='store_true',
+        default=None,
         help='Show background in code blocks'
     )
 
@@ -107,12 +109,14 @@ def main():
     parser.add_argument(
         '--no-stream-code',
         action='store_true',
+        default=None,
         help='Render code blocks all at once instead of line by line'
     )
 
     parser.add_argument(
         '--force-color',
         action='store_true',
+        default=None,
         help='Force color output even if terminal does not support it'
     )
 
@@ -186,9 +190,9 @@ def main():
         renderer = MarkdownRenderer(
             theme=args.theme,
             code_background=args.code_background,
-            line_numbers=not args.no_line_numbers,
+            line_numbers=False if args.no_line_numbers else None,
             width=args.width,
-            stream_code=not args.no_stream_code,
+            stream_code=False if args.no_stream_code else None,
             force_color=args.force_color,
         )
 
