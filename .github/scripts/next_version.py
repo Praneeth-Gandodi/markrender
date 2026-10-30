@@ -19,6 +19,9 @@ import sys
 TAG_PATTERN = re.compile(r"^v?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)$")
 BREAKING_SUBJECT = re.compile(r"^[a-zA-Z][\w-]*(\([^)]*\))?!:")
 FEATURE_SUBJECT = re.compile(r"^feat(\([^)]*\))?!?:", re.IGNORECASE)
+NON_RELEASE_SUBJECT = re.compile(
+    r"^(docs|test|tests|ci|build|chore|style)(\([^)]*\))?!?:", re.IGNORECASE
+)
 BREAKING_BODY = re.compile(r"^BREAKING[ -]CHANGE:", re.MULTILINE | re.IGNORECASE)
 
 
@@ -65,16 +68,24 @@ def commits_since(tag):
 
 
 def detect_bump(commits):
-    """Pick the highest conventional-commit bump, or None if there are no commits."""
+    """Pick the highest conventional-commit bump, or None if nothing counts.
+
+    Docs, tests, CI, build, chore, and style commits do not change the
+    package, so they never trigger a release on their own.
+    """
     if not commits:
         return None
 
-    bump = "patch"
+    bump = None
     for subject, body in commits:
+        if NON_RELEASE_SUBJECT.match(subject):
+            continue
         if BREAKING_SUBJECT.match(subject) or BREAKING_BODY.search(body):
             return "major"
         if FEATURE_SUBJECT.match(subject):
             bump = "minor"
+        elif bump != "minor":
+            bump = "patch"
     return bump
 
 

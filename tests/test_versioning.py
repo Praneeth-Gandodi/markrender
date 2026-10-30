@@ -77,6 +77,35 @@ def test_feature_commit_bumps_minor(tmp_path):
     assert result.stdout.strip() == "1.1.0"
 
 
+def test_docs_only_commit_does_not_release(tmp_path):
+    repo = make_repo(tmp_path)
+    commit(repo, "docs: explain the width flag", "readme.txt")
+
+    result = next_version(repo, "--bump", "auto")
+
+    assert result.returncode == 3
+
+
+def test_chore_only_commit_does_not_release(tmp_path):
+    repo = make_repo(tmp_path)
+    commit(repo, "chore: remove a local harness", "chore.txt")
+
+    result = next_version(repo, "--bump", "auto")
+
+    assert result.returncode == 3
+
+
+def test_maintenance_commits_do_not_raise_the_bump(tmp_path):
+    repo = make_repo(tmp_path)
+    commit(repo, "feat: add a renderer option", "feature.txt")
+    commit(repo, "chore: tidy up", "chore.txt")
+
+    result = next_version(repo, "--bump", "auto")
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "1.1.0"
+
+
 def test_breaking_commit_bumps_major(tmp_path):
     repo = make_repo(tmp_path)
     commit(repo, "feat!: change the public API", "breaking.txt")

@@ -262,6 +262,22 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Build changelog entry
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          python .github/scripts/changelog.py \
+            --version "$VERSION" \
+            --tag "$TAG" \
+            --notes-file release-notes.md
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -271,5 +287,32 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists."
           else
-            gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --verify-tag
           fi
+
+      - name: Update CHANGELOG.md
+        if: github.ref_type != 'tag'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          python .github/scripts/changelog.py \
+            --version "$VERSION" \
+            --tag "$TAG" \
+            --write CHANGELOG.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+
+          if git diff --cached --quiet; then
+            echo "CHANGELOG.md is already up to date."
+            exit 0
+          fi
+
+          git commit -m "docs(release): add $TAG to the changelog"
+          git pull --rebase origin main
+          git push origin HEAD:main

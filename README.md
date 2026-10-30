@@ -390,6 +390,11 @@ Hello :wave: Let's :rocket: go!
 - **Note-Taking Apps** - Terminal-based markdown note viewers
 - **Log Viewers** - Render structured logs with markdown
 
+## Changelog
+
+Release notes come from conventional commit messages, so the history stays in
+one place. See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+
 ## Development
 
 ### Setup Development Environment
@@ -426,12 +431,19 @@ no version number to edit by hand.
 2. Choose `auto` (recommended) or an explicit `patch`, `minor`, or `major` bump.
 3. The workflow runs the tests, creates the next `vX.Y.Z` tag, builds the
    sdist and wheel, publishes to PyPI, and creates a GitHub release.
+4. Release notes are generated from the commits since the last tag, and the
+   same entry is added to [CHANGELOG.md](CHANGELOG.md) on `main`.
 
 With `auto`, commit messages since the last tag decide the bump:
 
 - `feat!:` or a `BREAKING CHANGE:` footer → major
 - `feat:` → minor
-- everything else → patch
+- `fix:`, `perf:`, `refactor:`, or `revert:` → patch
+- `docs:`, `test:`, `chore:`, `ci:`, `build:`, and `style:` don't trigger a
+  release on their own
+
+Write commit subjects in the `type(scope): summary` form so the changelog and
+version bump stay accurate.
 
 Publishing uses PyPI Trusted Publishing (OIDC), so no API token is stored in
 the repository. Configure it once:
