@@ -99,7 +99,7 @@ def render_body(sections):
         entries = sections.get(section)
         if not entries:
             continue
-        parts.append(f"### {section}")
+        parts.append(f"### {section}\n")
         parts.extend(f"- {entry}" for entry in entries)
         parts.append("")
     return "\n".join(parts).strip()
