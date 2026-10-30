@@ -2,7 +2,7 @@
 
 **Professional Terminal Markdown Renderer for Streaming LLM Responses**
 
-MarkRender is a Python library that renders markdown in terminals, designed for streaming LLM responses. It provides syntax highlighting, multiple color themes, and supports markdown features without flickering.
+MarkRender renders markdown in the terminal. It is built for streaming output, so you can hand it a complete string or feed it chunks from an LLM as they arrive. Syntax highlighting, themes, tables, and the rest work the same either way, without reprinting content that is already on screen.
 
 ## Features
 
@@ -23,182 +23,268 @@ MarkRender is a Python library that renders markdown in terminals, designed for 
 
 ## Installation
 
+MarkRender is on PyPI:
+
 ```bash
-pip install git+https://github.com/Praneeth-Gandodi/markrender.git
+pip install markrender
 ```
 
-Or install from source:
+That installs the library and the `markrender` command. Check that it worked:
+
+```bash
+markrender --version
+```
+
+Upgrade an existing install with:
+
+```bash
+pip install --upgrade markrender
+```
+
+If you want to work on MarkRender itself, clone the repo and install it in editable mode instead:
 
 ```bash
 git clone https://github.com/Praneeth-Gandodi/markrender.git
 cd markrender
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-## Quick Start
+## Command Line
+
+Render a file:
+
+```bash
+markrender README.md
+```
+
+Read markdown from stdin:
+
+```bash
+cat notes.md | markrender
+```
+
+On PowerShell:
+
+```powershell
+Get-Content notes.md -Raw | markrender
+```
+
+Pick a theme:
+
+```bash
+markrender --theme dracula notes.md
+```
+
+Adjust code blocks:
+
+```bash
+markrender --no-line-numbers notes.md
+markrender --code-background notes.md
+markrender --no-stream-code notes.md
+```
+
+Set a fixed width when the terminal reports the wrong size, or when the output goes somewhere else:
+
+```bash
+markrender --width 80 notes.md
+```
+
+Force color when piping into another program, a log file, or CI:
+
+```bash
+markrender --force-color notes.md | less -R
+```
+
+List the theme names:
+
+```bash
+markrender --list-themes
+```
+
+Preview every theme with sample content:
+
+```bash
+markrender --preview-themes
+```
+
+Running `markrender` with no file and nothing piped in prints an error and exits.
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--theme NAME` | Color theme (default: `github-dark`) |
+| `--no-line-numbers` | Hide line numbers in code blocks |
+| `--code-background` | Show a background behind code blocks |
+| `--width N` | Wrap at a fixed width instead of the terminal width |
+| `--no-stream-code` | Render code blocks in one pass instead of line by line |
+| `--force-color` | Emit colors even when the output is not a terminal |
+| `--list-themes` | Print available themes and exit |
+| `--preview-themes` | Render sample markdown in every theme and exit |
+| `-v`, `--version` | Print the version and exit |
+
+CLI flags override values from a config file. See [Configuration](#configuration).
+
+## Python API
+
+### Render a string
 
 ````python
 from markrender import MarkdownRenderer
 
-# Create renderer with default theme
 renderer = MarkdownRenderer()
 
-# Render markdown content
-markdown_text = """
-# Hello World
+markdown = """
+# Hello
 
-This is **bold** and this is *italic*.
+Some **bold** text, some *italic* text, and `inline code`.
 
 ```python
 def hello():
     print("Hello from MarkRender!")
 ```
 
-## Features
-- Item 1
-- Item 2
-- [x] Completed task
-- [ ] Pending task
+- A list item
+- [x] A finished task
+- [ ] A pending task
 """
 
-renderer.render(markdown_text)
+renderer.render(markdown)
 renderer.finalize()
 ````
 
-### Streaming LLM Responses
+`render()` writes output as it parses, and `finalize()` flushes whatever is still buffered. For a string you already have, call them one after the other.
 
-Perfect for rendering streaming responses from LLM APIs:
+### Streaming LLM responses
 
 ```python
 from markrender import MarkdownRenderer
 from openai import OpenAI
 
 client = OpenAI()
-renderer = MarkdownRenderer(theme='github-dark')
+renderer = MarkdownRenderer(theme="github-dark")
 
 stream = client.chat.completions.create(
-    model="gpt-4",
+    model="gpt-4o",
     messages=[{"role": "user", "content": "Explain quantum computing"}],
-    stream=True
+    stream=True,
 )
 
 for chunk in stream:
-    content = chunk.choices[0].delta.content
-    if content:
-        renderer.render(content)
+    text = chunk.choices[0].delta.content
+    if text:
+        renderer.render(text)
 
 renderer.finalize()
 ```
 
-### Dim Mode
+The renderer keeps partial lines and open blocks in an internal buffer, so chunks can split anywhere: mid-word, mid-table, or in the middle of a code fence. Feed every chunk and call `finalize()` once when the stream ends.
 
-Use dim mode for "thinking" sections or less prominent content:
+### Dim mode
+
+`render()` takes a `dim_mode` argument, which draws that chunk in muted colors. This is useful for reasoning or "thinking" output that should stay visible without competing with the answer:
+
+```python
+renderer.render("Let me think about this...", dim_mode=True)
+renderer.render("Here is the answer.", dim_mode=False)
+```
+
+Dim mode applies per call, so you can turn it on and off while streaming.
+
+### Custom output
+
+By default output goes to stdout. Pass any text stream with `output`:
 
 ```python
 from markrender import MarkdownRenderer
 
-renderer = MarkdownRenderer()
-
-# Normal rendering
-renderer.render("This is **normal** content")
-
-# Dim/reduced color rendering
-renderer.render("This content is dimmed and less prominent", dim_mode=True)
+with open("rendered.txt", "w", encoding="utf-8") as log:
+    renderer = MarkdownRenderer(output=log, force_color=True)
+    renderer.render("# Saved to a file\n")
+    renderer.finalize()
 ```
 
-### Theme Preview
+Color detection still looks at stdout, so set `force_color=True` if you want ANSI colors in the file.
 
-Preview all available themes from the CLI:
+### Constructor options
 
-```bash
-markrender --preview-themes
-```
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `theme` | `"github-dark"` | Theme name |
+| `code_background` | `False` | Draw a background behind code blocks |
+| `line_numbers` | `True` | Show line numbers in code blocks |
+| `inline_code_color` | theme default | ANSI color code for inline code |
+| `width` | auto-detect | Wrap width in characters |
+| `force_color` | `False` | Emit color even when the output is not a TTY |
+| `stream_code` | `True` | Render code lines as they arrive |
+| `output` | `sys.stdout` | Stream to write to |
+| `use_config` | `True` | Load a config file if one is found |
+| `config` | `None` | Pass a `RendererConfig` directly |
 
-## Themes
-
-MarkRender includes 7 professional color themes:
-
-```python
-themes = [
-    'github-dark',      # GitHub's dark theme (default)
-    'monokai',          # Popular Monokai theme
-    'dracula',          # Dracula theme
-    'nord',             # Nord color palette
-    'one-dark',         # Atom One Dark
-    'solarized-dark',   # Solarized Dark
-    'solarized-light'   # Solarized Light
-]
-
-renderer = MarkdownRenderer(theme='dracula')
-```
-
-List available themes:
-
-```bash
-markrender --list-themes
-```
-
-## Configuration
-
-### Python API
+Custom inline code color uses the `rgb` helper:
 
 ```python
 from markrender import MarkdownRenderer
 from markrender.colors import rgb
 
 renderer = MarkdownRenderer(
-    theme='monokai',                       # Color theme
-    code_background=False,                 # Show background in code blocks
-    line_numbers=True,                     # Show line numbers in code
-    inline_code_color=rgb(255, 100, 200),  # Custom inline code color
-    width=100,                             # Terminal width (auto-detect by default)
-    force_color=False,                     # Force color output
-    stream_code=True                       # Stream code lines as they arrive
+    theme="monokai",
+    inline_code_color=rgb(255, 100, 200),
+    width=100,
 )
 ```
 
-### Parameters
+## Configuration
 
-- **theme** (str): Color theme name (default: `'github-dark'`)
-- **code_background** (bool): Show background in code blocks (default: `False`)
-- **line_numbers** (bool): Show line numbers in code blocks (default: `True`)
-- **inline_code_color** (str): Custom ANSI color code for inline code (default: theme default)
-- **width** (int): Terminal width in characters (default: auto-detect)
-- **force_color** (bool): Force color output even if terminal does not support it (default: `False`)
-- **stream_code** (bool): Render code lines as they arrive instead of buffering (default: `True`)
-- **output** (file): Output stream (default: `sys.stdout`)
+MarkRender reads a TOML config file if one exists. It checks these locations in order and uses the first match:
 
-### CLI Usage
+1. `.markrender.toml` in the current directory
+2. `~/.markrender/config.toml`
+3. `~/.config/markrender/config.toml`
 
-```bash
-markrender README.md
-markrender --theme dracula file.md
-cat file.md | markrender
-markrender --preview-themes
-markrender --list-themes
-markrender --no-line-numbers --code-background file.md
-markrender --width 80 --force-color file.md
-```
-
-### Config File
-
-MarkRender supports TOML configuration files. Place a `.markrender.toml` in your current directory or `~/.markrender/config.toml`:
+Example `.markrender.toml`:
 
 ```toml
 [theme]
-name = "github-dark"
+name = "dracula"
 
 [rendering]
-code_background = false
-line_numbers = true
+code_background = true
+line_numbers = false
 
 [output]
-# width = 80
+width = 100
 force_color = false
 
 [features]
-stream_code = true
+stream_code = false
 ```
+
+Values are applied in this order, from highest to lowest priority:
+
+1. Arguments passed to `MarkdownRenderer(...)`
+2. The config file
+3. Built-in defaults
+
+Only non-`None` arguments override the config, so `MarkdownRenderer()` picks up your file settings. Pass `use_config=False` to ignore config files entirely.
+
+## Themes
+
+| Theme | Notes |
+|-------|-------|
+| `github-dark` | GitHub's dark theme (default) |
+| `monokai` | Classic Monokai palette |
+| `dracula` | Dracula palette |
+| `nord` | Nord palette |
+| `one-dark` | Atom One Dark |
+| `solarized-dark` | Solarized Dark |
+| `solarized-light` | Solarized Light |
+
+```python
+renderer = MarkdownRenderer(theme="dracula")
+```
+
+See the names from the CLI with `markrender --list-themes`, or render a sample in each theme with `markrender --preview-themes`.
 
 ## Supported Markdown Features
 
