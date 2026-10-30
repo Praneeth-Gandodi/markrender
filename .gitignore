@@ -66,9 +66,3 @@ Thumbs.db
 *.log
 .ruff_cache/
 markrender/_version.py
-
-
-# test files
-test_all_fixes.py
-test_emoji.py    
-test_simple.py

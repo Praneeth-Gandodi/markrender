@@ -422,6 +422,12 @@ python examples/streaming_demo.py
 python examples/theme_showcase.py
 ```
 
+To eyeball every supported markdown feature at once, render the sample fixture:
+
+```bash
+markrender tests/fixtures/sample.md
+```
+
 ### Releasing
 
 The package version is derived from git tags by `setuptools_scm`, so there is
