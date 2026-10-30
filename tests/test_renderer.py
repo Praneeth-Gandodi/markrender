@@ -620,3 +620,62 @@ class TestMarkdownRenderer:
         result = output.getvalue()
         assert "A" in result
         assert "code" in result
+
+
+class TestTableAlignment:
+    """Table alignment and width handling through the renderer."""
+
+    def test_alignment_markers_are_rendered(self):
+        output = StringIO()
+        renderer = MarkdownRenderer(output=output)
+
+        renderer.render("| Item | Qty | Price |\n")
+        renderer.render("|:-----|----:|------:|\n")
+        renderer.render("| Apples | 3 | 1.20 |\n")
+        renderer.render("\n")
+        renderer.finalize()
+
+        assert "│ Apples │   3 │  1.20 │" in output.getvalue()
+
+    def test_short_columns_keep_their_text(self):
+        output = StringIO()
+        renderer = MarkdownRenderer(output=output, width=60)
+
+        renderer.render("| Name | Description | Status |\n")
+        renderer.render("|---|---|---|\n")
+        renderer.render(
+            "| markrender | Render markdown in the terminal with "
+            "streaming support and syntax highlighting | active |\n"
+        )
+        renderer.render("\n")
+        renderer.finalize()
+
+        result = output.getvalue()
+        assert "markrender" in result
+        assert "Status" in result
+        assert "markre…" not in result
+        assert "Stat…" not in result
+
+    def test_narrow_table_does_not_crush_a_single_column(self):
+        output = StringIO()
+        renderer = MarkdownRenderer(output=output, width=34)
+
+        renderer.render("| Name | Description | Status |\n")
+        renderer.render("|---|---|---|\n")
+        renderer.render(
+            "| markrender | Render markdown in the terminal with "
+            "streaming support and syntax highlighting | active |\n"
+        )
+        renderer.render("\n")
+        renderer.finalize()
+
+        lines = [
+            line for line in output.getvalue().splitlines()
+            if line.startswith("┌")
+        ]
+        widths = [
+            len(segment) for segment in lines[0][1:-1].split("┬")
+        ]
+
+        assert max(widths) - min(widths) <= 2
+        assert all(len(line) <= 34 for line in output.getvalue().splitlines())

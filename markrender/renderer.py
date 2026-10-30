@@ -23,6 +23,7 @@ class RenderState:
         self.in_table = False
         self.table_rows = []
         self.table_row_count = 0
+        self.table_alignments = []
         self.in_blockquote = False
         self.blockquote_lines = []
         self.alert_type: Optional[str] = None
@@ -38,6 +39,7 @@ class RenderState:
         self.in_table = False
         self.table_rows = []
         self.table_row_count = 0
+        self.table_alignments = []
 
     def reset_blockquote(self):
         self.in_blockquote = False
@@ -227,12 +229,16 @@ class MarkdownRenderer:
             stripped = line.rstrip()
             table_row = self.parser.parse_table_row(stripped)
             if table_row is not None:
-                if not self.parser.is_separator_row(table_row):
+                if self.parser.is_separator_row(table_row):
+                    self.state.table_alignments = self.parser.parse_table_alignments(table_row)
+                else:
                     formatted_row = [self.parser.apply_inline_formatting(cell, self.formatter) for cell in table_row]
                     self.state.table_rows.append(formatted_row)
             else:
                 if self.state.table_rows:
-                    formatted = self.formatter.format_table(self.state.table_rows)
+                    formatted = self.formatter.format_table(
+                        self.state.table_rows, self.state.table_alignments
+                    )
                     self._write(formatted, 'table')
                 self.state.reset_table()
                 self.buffer = self._rebuild_buffer(complete_lines[i:], tail)
@@ -294,12 +300,17 @@ class MarkdownRenderer:
             if not self.state.in_table:
                 self.state.in_table = True
                 self.state.table_rows = []
-            if not self.parser.is_separator_row(table_row):
+                self.state.table_alignments = []
+            if self.parser.is_separator_row(table_row):
+                self.state.table_alignments = self.parser.parse_table_alignments(table_row)
+            else:
                 formatted_row = [self.parser.apply_inline_formatting(cell, self.formatter) for cell in table_row]
                 self.state.table_rows.append(formatted_row)
             return
         elif self.state.in_table:
-            formatted = self.formatter.format_table(self.state.table_rows)
+            formatted = self.formatter.format_table(
+                self.state.table_rows, self.state.table_alignments
+            )
             self._write(formatted, 'table')
             self.state.reset_table()
 
@@ -383,7 +394,9 @@ class MarkdownRenderer:
             self.state.reset_code()
 
         if self.state.in_table and self.state.table_rows:
-            formatted = self.formatter.format_table(self.state.table_rows)
+            formatted = self.formatter.format_table(
+                self.state.table_rows, self.state.table_alignments
+            )
             self._write(formatted, 'table')
             self.state.reset_table()
 

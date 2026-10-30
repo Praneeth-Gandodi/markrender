@@ -78,6 +78,22 @@ class MarkdownParser:
     def is_separator_row(cells):
         return bool(cells and all(re.match(r"^:?-+:?$", cell) for cell in cells))
 
+    @staticmethod
+    def parse_table_alignments(cells):
+        """Return the alignment for each column from a separator row."""
+        alignments = []
+        for cell in cells:
+            cell = cell.strip()
+            left = cell.startswith(':')
+            right = cell.endswith(':')
+            if left and right:
+                alignments.append('center')
+            elif right:
+                alignments.append('right')
+            else:
+                alignments.append('left')
+        return alignments
+
     def parse_checkbox(self, line):
         match = self.CHECKBOX_PATTERN.match(line)
         if match:

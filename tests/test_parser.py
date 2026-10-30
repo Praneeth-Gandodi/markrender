@@ -309,3 +309,21 @@ class TestMarkdownParser:
         assert result == ""
 
 
+
+
+class TestTableAlignments:
+    """Alignment markers on table separator rows."""
+
+    def test_parse_table_alignments(self):
+        parser = MarkdownParser()
+        cells = parser.parse_table_row("|:---|:---:|---:|")
+
+        assert parser.parse_table_alignments(cells) == [
+            "left", "center", "right"
+        ]
+
+    def test_parse_table_alignments_defaults_to_left(self):
+        parser = MarkdownParser()
+        cells = parser.parse_table_row("|---|---|")
+
+        assert parser.parse_table_alignments(cells) == ["left", "left"]

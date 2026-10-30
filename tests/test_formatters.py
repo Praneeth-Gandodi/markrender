@@ -367,3 +367,18 @@ class TestMarkdownFormatter:
         """Test strikethrough formatting"""
         result = self.formatter.format_strikethrough("strike")
         assert "strike" in result
+
+
+class TestTableAlignment:
+    """Column alignment in formatted tables."""
+
+    def test_format_table_alignment(self):
+        formatter = MarkdownFormatter(get_theme('github-dark'), width=80)
+        rows = [
+            ["Name", "Qty", "Status"],
+            ["A", "2", "ok"],
+        ]
+
+        result = formatter.format_table(rows, ["left", "right", "center"])
+
+        assert "│ A    │   2 │   ok   │" in result

@@ -3,7 +3,6 @@ Output formatters for markdown elements
 Handles rendering of headings, code, tables, lists, and more
 """
 
-import re
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name, TextLexer
 from pygments.formatters import Terminal256Formatter
@@ -12,7 +11,7 @@ try:
 except ImportError:
     emoji_lib = None
 
-from .colors import colorize, Colors, get_terminal_width
+from .colors import colorize, strip_ansi, Colors, get_terminal_width
 
 
 class MarkdownFormatter:
@@ -135,7 +134,31 @@ class MarkdownFormatter:
         """
         return self._colorize(f'`{text}`', self.inline_code_color)
     
-    def format_table(self, rows):
+    @staticmethod
+    def _visible_width(text):
+        """Return the printable width of text, ignoring ANSI escapes."""
+        return len(strip_ansi(str(text)))
+
+    @staticmethod
+    def _fit_table_widths(widths, available):
+        """Keep short columns intact and share the loss across long ones."""
+        widths = list(widths)
+        if sum(widths) <= available:
+            return widths
+
+        fitted = [0] * len(widths)
+        remaining = available
+        remaining_cols = len(widths)
+
+        for index in sorted(range(len(widths)), key=widths.__getitem__):
+            share = max(1, remaining // remaining_cols)
+            fitted[index] = min(widths[index], share)
+            remaining -= fitted[index]
+            remaining_cols -= 1
+
+        return fitted
+
+    def format_table(self, rows, alignments=None):
         if not rows:
             return ''
 
@@ -149,21 +172,15 @@ class MarkdownFormatter:
         col_widths = [0] * max_cols
         for row in normalized_rows:
             for i, cell in enumerate(row):
-                clean_cell = re.sub(r'\033\[[0-9;]*m', '', str(cell))
-                col_widths[i] = max(col_widths[i], len(clean_cell))
+                col_widths[i] = max(col_widths[i], self._visible_width(cell))
 
         total_border_chars = max_cols * 3 + 1
-        total_table_width = sum(col_widths) + total_border_chars
-        max_width = self.width - 2
+        available = self.width - 2 - total_border_chars
+        available = max(available, max_cols)
+        col_widths = self._fit_table_widths(col_widths, available)
 
-        if total_table_width > max_width:
-            available = max_width - total_border_chars
-            widths_sum = sum(col_widths)
-            if available < max_cols:
-                col_widths = [max(1, available // max_cols)] * max_cols
-            else:
-                for i in range(max_cols):
-                    col_widths[i] = max(1, col_widths[i] * available // widths_sum)
+        alignments = list(alignments or [])
+        alignments += ['left'] * (max_cols - len(alignments))
 
         border_color = self.theme['table_border']
         header_color = self.theme.get('table_header')
@@ -172,18 +189,33 @@ class MarkdownFormatter:
         for row_idx, row in enumerate(normalized_rows):
             padded = []
             for i, cell in enumerate(row):
-                clean_cell = re.sub(r'\033\[[0-9;]*m', '', str(cell))
-                if len(clean_cell) > col_widths[i]:
-                    cell_str = clean_cell[:col_widths[i] - 1] + '…'
-                    if row_idx == 0 and header_color:
-                        cell_str = self._colorize(cell_str, header_color + Colors.BOLD)
+                clean_cell = strip_ansi(str(cell))
+                width = col_widths[i]
+
+                if self._visible_width(clean_cell) > width:
+                    if width > 1:
+                        cell_str = clean_cell[:width - 1] + '…'
+                    else:
+                        cell_str = '…'
                 else:
                     cell_str = str(cell)
-                    padding = col_widths[i] - len(clean_cell)
-                    if padding:
-                        cell_str = cell_str + ' ' * padding
-                    if row_idx == 0 and header_color:
-                        cell_str = self._colorize(cell_str, header_color + Colors.BOLD)
+
+                padding = width - self._visible_width(cell_str)
+                alignment = alignments[i]
+                if alignment == 'right':
+                    cell_str = ' ' * padding + cell_str
+                elif alignment == 'center':
+                    left = padding // 2
+                    cell_str = (
+                        ' ' * left + cell_str + ' ' * (padding - left)
+                    )
+                else:
+                    cell_str = cell_str + ' ' * padding
+
+                if row_idx == 0 and header_color:
+                    cell_str = self._colorize(
+                        cell_str, header_color + Colors.BOLD
+                    )
                 padded.append(cell_str)
 
             cells_formatted = [f' {cell} ' for cell in padded]
